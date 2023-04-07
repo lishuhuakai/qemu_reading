@@ -20,7 +20,7 @@
  */
 void OPPROTO glue(op_movl_A0,REGNAME)(void)
 {
-    A0 = REG;
+    A0 = REG; /* 寄存器赋值 */
 }
 
 void OPPROTO glue(op_addl_A0,REGNAME)(void)

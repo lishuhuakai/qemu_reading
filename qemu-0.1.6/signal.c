@@ -162,6 +162,7 @@ void signal_init(void)
 
     /* set all host signal handlers. ALL signals are blocked during
        the handlers to serialize them. */
+    /* 注册所有的信号处理函数 */
     sigfillset(&act.sa_mask);
     act.sa_flags = SA_SIGINFO;
     act.sa_sigaction = host_signal_handler;
@@ -202,7 +203,7 @@ void __attribute((noreturn)) force_sig(int sig)
     fprintf(stderr, "qemu: uncaught target signal %d (%s) - exiting\n", 
             sig, strsignal(host_sig));
 #if 1
-    _exit(-host_sig);
+    _exit(-host_sig); /* 这里直接退出 */
 #else
     {
         struct sigaction act;
@@ -217,6 +218,7 @@ void __attribute((noreturn)) force_sig(int sig)
 
 /* queue a signal so that it will be send to the virtual CPU as soon
    as possible */
+/* 信号排队,以至于使得它可以尽快被送到虚拟的cpu上去 */
 int queue_signal(int sig, target_siginfo_t *info)
 {
     struct emulated_sigaction *k;
@@ -228,14 +230,14 @@ int queue_signal(int sig, target_siginfo_t *info)
             sig);
 #endif
     k = &sigact_table[sig - 1];
-    handler = k->sa._sa_handler;
+    handler = k->sa._sa_handler; /* 信号处理方式 */
     if (handler == TARGET_SIG_DFL) {
         /* default handler : ignore some signal. The other are fatal */
         if (sig != TARGET_SIGCHLD && 
             sig != TARGET_SIGURG && 
             sig != TARGET_SIGWINCH) {
             force_sig(sig);
-        } else {
+        } else { /* 忽略信号 */
             return 0; /* indicate ignored */
         }
     } else if (handler == TARGET_SIG_IGN) {
@@ -244,15 +246,15 @@ int queue_signal(int sig, target_siginfo_t *info)
     } else if (handler == TARGET_SIG_ERR) {
         force_sig(sig);
     } else {
-        pq = &k->first;
-        if (sig < TARGET_SIGRTMIN) {
+        pq = &k->first; /* 每一个信号都对应一个k */
+        if (sig < TARGET_SIGRTMIN) { /* 非实时信号,只存储一个 */
             /* if non real time signal, we queue exactly one signal */
             if (!k->pending)
                 q = &k->info;
             else
                 return 0;
         } else {
-            if (!k->pending) {
+            if (!k->pending) { /* 没有信号等待处理 */
                 /* first signal */
                 q = &k->info;
             } else {
@@ -260,11 +262,11 @@ int queue_signal(int sig, target_siginfo_t *info)
                 if (!q)
                     return -EAGAIN;
                 while (*pq != NULL)
-                    pq = &(*pq)->next;
+                    pq = &(*pq)->next; /* pq指向链表最后一个元素 */
             }
         }
-        *pq = q;
-        q->info = *info;
+        *pq = q; 
+        q->info = *info; /* 这里直接拷贝第一个信号 */
         q->next = NULL;
         k->pending = 1;
         /* signal that a new signal is pending */
@@ -299,7 +301,7 @@ static void dump_regs(struct ucontext *uc)
 #endif
 
 #endif
-
+/* 信号处理函数 */
 static void host_signal_handler(int host_signum, siginfo_t *info, 
                                 void *puc)
 {
@@ -314,7 +316,7 @@ static void host_signal_handler(int host_signum, siginfo_t *info,
     }
 
     /* get target signal number */
-    sig = host_to_target_signal(host_signum);
+    sig = host_to_target_signal(host_signum); /* 信号转换表 */
     if (sig < 1 || sig > TARGET_NSIG)
         return;
 #if defined(DEBUG_SIGNAL)

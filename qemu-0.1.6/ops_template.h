@@ -47,17 +47,18 @@ static int glue(compute_all_add, SUFFIX)(void)
 {
     int cf, pf, af, zf, sf, of;
     int src1, src2;
-    src1 = CC_SRC;
-    src2 = CC_DST - CC_SRC;
-    cf = (DATA_TYPE)CC_DST < (DATA_TYPE)src1;
+    src1 = CC_SRC; /* 操作数1 */
+    src2 = CC_DST - CC_SRC; /* 操作数2 */
+    /* 计算进位标志,这个很有意思,如果结果比操作数1小,那说明溢出了,就有进位 */
+    cf = (DATA_TYPE)CC_DST < (DATA_TYPE)src1; 
     pf = parity_table[(uint8_t)CC_DST];
     af = (CC_DST ^ src1 ^ src2) & 0x10;
-    zf = ((DATA_TYPE)CC_DST == 0) << 6;
+    zf = ((DATA_TYPE)CC_DST == 0) << 6; /* zf用于判断计算后的结果是否为0 */
     sf = lshift(CC_DST, 8 - DATA_BITS) & 0x80;
     of = lshift((src1 ^ src2 ^ -1) & (src1 ^ CC_DST), 12 - DATA_BITS) & CC_O;
     return cf | pf | af | zf | sf | of;
 }
-
+/* cf进位值 */
 static int glue(compute_c_add, SUFFIX)(void)
 {
     int src1, cf;
@@ -66,13 +67,14 @@ static int glue(compute_c_add, SUFFIX)(void)
     return cf;
 }
 
+/* adc是带进位的加法指令 */
 static int glue(compute_all_adc, SUFFIX)(void)
 {
     int cf, pf, af, zf, sf, of;
     int src1, src2;
-    src1 = CC_SRC;
-    src2 = CC_DST - CC_SRC - 1;
-    cf = (DATA_TYPE)CC_DST <= (DATA_TYPE)src1;
+    src1 = CC_SRC; /* 加数1 */
+    src2 = CC_DST - CC_SRC - 1; /* 加数2 */
+    cf = (DATA_TYPE)CC_DST <= (DATA_TYPE)src1; /* carry flag */
     pf = parity_table[(uint8_t)CC_DST];
     af = (CC_DST ^ src1 ^ src2) & 0x10;
     zf = ((DATA_TYPE)CC_DST == 0) << 6;
@@ -158,12 +160,12 @@ static int glue(compute_all_inc, SUFFIX)(void)
 {
     int cf, pf, af, zf, sf, of;
     int src1, src2;
-    src1 = CC_DST - 1;
+    src1 = CC_DST - 1; /* CC_DST应该是计算结果 */
     src2 = 1;
-    cf = CC_SRC;
-    pf = parity_table[(uint8_t)CC_DST];
+    cf = CC_SRC; /* 进位标志 */
+    pf = parity_table[(uint8_t)CC_DST]; /* 奇偶位标志 */
     af = (CC_DST ^ src1 ^ src2) & 0x10;
-    zf = ((DATA_TYPE)CC_DST == 0) << 6;
+    zf = ((DATA_TYPE)CC_DST == 0) << 6; /* 零标志位 */
     sf = lshift(CC_DST, 8 - DATA_BITS) & 0x80;
     of = ((CC_DST & DATA_MASK) == SIGN_MASK) << 11;
     return cf | pf | af | zf | sf | of;

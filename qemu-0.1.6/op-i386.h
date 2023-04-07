@@ -1,3 +1,7 @@
+/* i386字节码生成
+ * @param opc_buf 操作码信息
+ * @param opparam_buf 参数信息
+ */
 int dyngen_code(uint8_t *gen_code_buf,
                 const uint16_t *opc_buf, const uint32_t *opparam_buf)
 {
@@ -14,6 +18,12 @@ int dyngen_code(uint8_t *gen_code_buf,
             case INDEX_op_movl_A0_EAX:
             {
                 extern void op_movl_A0_EAX();
+                /* 我很好奇,这里为什么是3,在32位系统下面,一个指针,应当有4个字节
+                 * op_movl_A0_EAX的汇编实现如下,确实用了3个字节
+                 * 0002b558 <op_movl_A0_EAX>:
+                 * 2b558:	8b 7d 00             	mov    0x0(%ebp),%edi
+                 * 2b55b:	c3                   	ret 
+                 */
                 memcpy(gen_code_ptr, &op_movl_A0_EAX, 3);
                 gen_code_ptr += 3;
             }
@@ -22,6 +32,7 @@ int dyngen_code(uint8_t *gen_code_buf,
             case INDEX_op_addl_A0_EAX:
             {
                 extern void op_addl_A0_EAX();
+                /* 拷贝生成的i386字节码 */
                 memcpy(gen_code_ptr, &op_addl_A0_EAX, 3);
                 gen_code_ptr += 3;
             }
@@ -174,6 +185,7 @@ int dyngen_code(uint8_t *gen_code_buf,
             case INDEX_op_movh_EAX_T1:
             {
                 extern void op_movh_EAX_T1();
+				/* 其实我有一个疑问,那就是,为什么这里要拷贝5个字节 */
                 memcpy(gen_code_ptr, &op_movh_EAX_T1, 5);
                 gen_code_ptr += 5;
             }
@@ -890,7 +902,11 @@ int dyngen_code(uint8_t *gen_code_buf,
                 gen_code_ptr += 6;
             }
             break;
-
+            /* 这里摘录一下op_movl_T0_EBP的实现,用了3个字节来编码 
+             * 0002b848 <op_movl_T0_EBP>:
+             * 2b848:	8b 5d 14             	mov    0x14(%ebp),%ebx
+             * 2b84b:	c3                   	ret  
+             */
             case INDEX_op_movl_T0_EBP:
             {
                 extern void op_movl_T0_EBP();
@@ -1403,7 +1419,7 @@ int dyngen_code(uint8_t *gen_code_buf,
             }
             break;
 
-            case INDEX_op_negl_T0_cc:
+            case INDEX_op_negl_T0_cc: /* T0取反,并且赋值给cc */
             {
                 extern void op_negl_T0_cc();
                 memcpy(gen_code_ptr, &op_negl_T0_cc, 12);
@@ -1479,7 +1495,7 @@ int dyngen_code(uint8_t *gen_code_buf,
             }
             break;
 
-            case INDEX_op_negl_T0:
+            case INDEX_op_negl_T0: /* 寄存器中的值取反 */
             {
                 extern void op_negl_T0();
                 memcpy(gen_code_ptr, &op_negl_T0, 2);
@@ -2012,6 +2028,7 @@ int dyngen_code(uint8_t *gen_code_buf,
                 memcpy(gen_code_ptr, &op_jb_subb, 27);
                 param1 = *opparam_ptr++;
                 param2 = *opparam_ptr++;
+				/* 这里是在记录所谓的参数吗? */
                 *(uint32_t *)(gen_code_ptr + 14) = param1 + 0;
                 *(uint32_t *)(gen_code_ptr + 23) = param2 + 0;
                 gen_code_ptr += 27;
@@ -7671,7 +7688,7 @@ static inline void gen_op_rep_insw_fast(void)
 
 static inline void gen_op_movsw_a32(void)
 {
-    *gen_opc_ptr++ = INDEX_op_movsw_a32;
+    *gen_opc_ptr++ = INDEX_op_movsw_a32; /* 2字节记录一个操作符 */
 }
 
 static inline void gen_op_rep_movsw_a32(void)

@@ -59,9 +59,7 @@ struct dis_private
    ? 1 : fetch_data ((info), (addr)))
 
 static int
-fetch_data (info, addr)
-struct disassemble_info *info;
-bfd_byte *addr;
+fetch_data (struct disassemble_info * info, bfd_byte * addr)
 {
     int status;
     struct dis_private *priv = (struct dis_private *)info->private_data;
@@ -1146,7 +1144,6 @@ static char op1out[100], op2out[100], op3out[100];
 static int op_address[3], op_ad, op_index[3];
 static int start_pc;
 
-
 /*
  *   On the 386's of 1988, the maximum length of an instruction is 15 bytes.
  *   (see topic "Redundant prefixes" in the "Differences from 8086"
@@ -1158,10 +1155,9 @@ static int start_pc;
 
 int print_insn_x86 PARAMS ((bfd_vma pc, disassemble_info *info, int aflag,
                             int dflag));
+/* 打印i386的指令 */
 int
-print_insn_i386 (pc, info)
-bfd_vma pc;
-disassemble_info *info;
+print_insn_i386 (bfd_vma pc, disassemble_info * info)
 {
     if (info->mach == bfd_mach_i386_i386)
         return print_insn_x86 (pc, info, 1, 1);
@@ -1172,11 +1168,7 @@ disassemble_info *info;
 }
 
 int
-print_insn_x86 (pc, info, aflag, dflag)
-bfd_vma pc;
-disassemble_info *info;
-int aflag;
-int dflag;
+print_insn_x86 (bfd_vma pc, disassemble_info * info, int aflag, int dflag)
 {
     struct dis386 *dp;
     int i;
@@ -1584,9 +1576,7 @@ static char *fgrps[][8] =
 };
 
 static void
-dofloat (aflag, dflag)
-int aflag;
-int dflag;
+dofloat (int aflag, int dflag)
 {
     struct dis386 *dp;
     unsigned char floatop;
@@ -1626,10 +1616,7 @@ int dflag;
 
 /* ARGSUSED */
 static int
-OP_ST (ignore, aflag, dflag)
-int ignore;
-int aflag;
-int dflag;
+OP_ST (int ignore, int aflag, int dflag)
 {
     oappend ("%st");
     return (0);
@@ -1637,10 +1624,7 @@ int dflag;
 
 /* ARGSUSED */
 static int
-OP_STi (ignore, aflag, dflag)
-int ignore;
-int aflag;
-int dflag;
+OP_STi (int ignore, int aflag, int dflag)
 {
     sprintf (scratchbuf, "%%st(%d)", rm);
     oappend (scratchbuf);
@@ -1650,10 +1634,7 @@ int dflag;
 
 /* capital letters in template are macros */
 static void
-putop (template, aflag, dflag)
-char *template;
-int aflag;
-int dflag;
+putop (char * template, int aflag, int dflag)
 {
     char *p;
 
@@ -1692,8 +1673,7 @@ int dflag;
 }
 
 static void
-oappend (s)
-char *s;
+oappend (char *s)
 {
     strcpy (obufp, s);
     obufp += strlen (s);
@@ -1718,20 +1698,14 @@ append_prefix ()
 }
 
 static int
-OP_indirE (bytemode, aflag, dflag)
-int bytemode;
-int aflag;
-int dflag;
+OP_indirE (int bytemode, int aflag, int dflag)
 {
     oappend ("*");
     return OP_E (bytemode, aflag, dflag);
 }
 
 static int
-OP_E (bytemode, aflag, dflag)
-int bytemode;
-int aflag;
-int dflag;
+OP_E (int bytemode, int aflag, int dflag)
 {
     int disp;
 
@@ -1873,10 +1847,7 @@ int dflag;
 }
 
 static int
-OP_G (bytemode, aflag, dflag)
-int bytemode;
-int aflag;
-int dflag;
+OP_G (int bytemode, int aflag, int dflag)
 {
     switch (bytemode)
     {
@@ -1927,18 +1898,14 @@ get16 ()
 }
 
 static void
-set_op (op)
-int op;
+set_op (int op)
 {
     op_index[op_ad] = op_ad;
     op_address[op_ad] = op;
 }
 
 static int
-OP_REG (code, aflag, dflag)
-int code;
-int aflag;
-int dflag;
+OP_REG (int code, int aflag, int dflag)
 {
     char *s;
 
@@ -1997,10 +1964,7 @@ int dflag;
 }
 
 static int
-OP_I (bytemode, aflag, dflag)
-int bytemode;
-int aflag;
-int dflag;
+OP_I (int bytemode, int aflag, int dflag)
 {
     int op;
 
@@ -2029,10 +1993,7 @@ int dflag;
 }
 
 static int
-OP_sI (bytemode, aflag, dflag)
-int bytemode;
-int aflag;
-int dflag;
+OP_sI (int bytemode, int aflag, int dflag)
 {
     int op;
 
@@ -2069,10 +2030,7 @@ int dflag;
 }
 
 static int
-OP_J (bytemode, aflag, dflag)
-int bytemode;
-int aflag;
-int dflag;
+OP_J (int bytemode, int aflag, int dflag)
 {
     int disp;
     int mask = -1;
@@ -2112,10 +2070,7 @@ int dflag;
 
 /* ARGSUSED */
 static int
-OP_SEG (dummy, aflag, dflag)
-int dummy;
-int aflag;
-int dflag;
+OP_SEG (int dummy, int aflag, int dflag)
 {
     static char *sreg[] =
     {
@@ -2127,10 +2082,7 @@ int dflag;
 }
 
 static int
-OP_DIR (size, aflag, dflag)
-int size;
-int aflag;
-int dflag;
+OP_DIR (int size, int aflag, int dflag)
 {
     int seg, offset;
 
@@ -2174,10 +2126,7 @@ int dflag;
 
 /* ARGSUSED */
 static int
-OP_OFF (bytemode, aflag, dflag)
-int bytemode;
-int aflag;
-int dflag;
+OP_OFF (int bytemode, int aflag, int dflag)
 {
     int off;
 
@@ -2195,10 +2144,7 @@ int dflag;
 
 /* ARGSUSED */
 static int
-OP_ESDI (dummy, aflag, dflag)
-int dummy;
-int aflag;
-int dflag;
+OP_ESDI (int dummy, int aflag,  int dflag)
 {
     oappend ("%es:(");
     oappend (aflag ? "%edi" : "%di");
@@ -2208,10 +2154,7 @@ int dflag;
 
 /* ARGSUSED */
 static int
-OP_DSSI (dummy, aflag, dflag)
-int dummy;
-int aflag;
-int dflag;
+OP_DSSI (int dummy, int aflag, int dflag)
 {
     if ((prefixes
          & (PREFIX_CS
@@ -2246,10 +2189,7 @@ int dflag;
 
 /* ARGSUSED */
 static int
-OP_C (dummy, aflag, dflag)
-int dummy;
-int aflag;
-int dflag;
+OP_C (int dummy, int aflag, int dflag)
 {
     codep++; /* skip mod/rm */
     sprintf (scratchbuf, "%%cr%d", reg);
@@ -2259,10 +2199,7 @@ int dflag;
 
 /* ARGSUSED */
 static int
-OP_D (dummy, aflag, dflag)
-int dummy;
-int aflag;
-int dflag;
+OP_D (int dummy, int aflag, int dflag)
 {
     codep++; /* skip mod/rm */
     sprintf (scratchbuf, "%%db%d", reg);
@@ -2272,10 +2209,7 @@ int dflag;
 
 /* ARGSUSED */
 static int
-OP_T (dummy, aflag, dflag)
-int dummy;
-int aflag;
-int dflag;
+OP_T (int dummy, int aflag, int dflag)
 {
     codep++; /* skip mod/rm */
     sprintf (scratchbuf, "%%tr%d", reg);
@@ -2284,10 +2218,7 @@ int dflag;
 }
 
 static int
-OP_rm (bytemode, aflag, dflag)
-int bytemode;
-int aflag;
-int dflag;
+OP_rm (int bytemode, int aflag, int dflag)
 {
     switch (bytemode)
     {
@@ -2302,10 +2233,7 @@ int dflag;
 }
 
 static int
-OP_MMX (bytemode, aflag, dflag)
-int bytemode;
-int aflag;
-int dflag;
+OP_MMX (int bytemode, int aflag,  int dflag)
 {
     sprintf (scratchbuf, "%%mm%d", reg);
     oappend (scratchbuf);
@@ -2313,10 +2241,7 @@ int dflag;
 }
 
 static int
-OP_EM (bytemode, aflag, dflag)
-int bytemode;
-int aflag;
-int dflag;
+OP_EM (int bytemode, int aflag, int dflag)
 {
     if (mod != 3)
         return OP_E (bytemode, aflag, dflag);
@@ -2328,10 +2253,7 @@ int dflag;
 }
 
 static int
-OP_MS (bytemode, aflag, dflag)
-int bytemode;
-int aflag;
-int dflag;
+OP_MS (int bytemode, int aflag, int dflag)
 {
     ++codep;
     sprintf (scratchbuf, "%%mm%d", rm);

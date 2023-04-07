@@ -141,6 +141,7 @@ enum {
 #include "op-i386.h"
 
 /* operand size */
+/* 操作数大小 */
 enum {
     OT_BYTE = 0,
     OT_WORD,
@@ -201,7 +202,7 @@ static GenOpFunc *gen_op_mov_reg_T0[3][8] = {
         gen_op_movl_EDI_T0,
     },
 };
-
+/* 将T1寄存器的值移动到对应的寄存器之中 */
 static GenOpFunc *gen_op_mov_reg_T1[3][8] = {
     [OT_BYTE] = {
         gen_op_movb_EAX_T1,
@@ -800,11 +801,17 @@ static GenOpFunc1 *gen_op_fp_arith_STN_ST0[8] = {
     gen_op_fdiv_STN_ST0,
 };
 
+/*
+ * @param op 操作码
+ * @param d 目的
+ * @param s 源
+ * @param ot 操作数的所占用的长度
+ */
 static void gen_op(DisasContext *s1, int op, int ot, int d, int s)
 {
-    if (d != OR_TMP0)
+    if (d != OR_TMP0) /* 将目的操作数移动到T0寄存器 */
         gen_op_mov_TN_reg[ot][0][d]();
-    if (s != OR_TMP1)
+    if (s != OR_TMP1) /* 将源操作数移动到T1寄存器 */
         gen_op_mov_TN_reg[ot][1][s]();
     if (op == OP_ADCL || op == OP_SBBL) {
         if (s1->cc_op != CC_OP_DYNAMIC)
@@ -819,12 +826,14 @@ static void gen_op(DisasContext *s1, int op, int ot, int d, int s)
         gen_op_mov_reg_T0[ot][d]();
 }
 
+/* 源操作数为立即数 */
 static void gen_opi(DisasContext *s1, int op, int ot, int d, int c)
 {
-    gen_op_movl_T1_im(c);
+    gen_op_movl_T1_im(c); /* 将立即数移动到T1寄存器 */
     gen_op(s1, op, ot, d, OR_TMP1);
 }
 
+/* 自增指令产生代码 */
 static void gen_inc(DisasContext *s1, int ot, int d, int c)
 {
     if (d != OR_TMP0)
@@ -918,6 +927,7 @@ static void gen_lea_modrm(DisasContext *s, int modrm, int *reg_ptr, int *offset_
         }
 
         if (base >= 0) { /* base用于指示寄存器 */
+            /* 这里说明一下,i386指令的操作数可能涉及多个寄存器,总之不管怎样,统一加载到A0寄存器 */
             gen_op_movl_A0_reg[base](); /* 将寄存器的值移动到A0寄存器 */
             if (disp != 0)
                 gen_op_addl_A0_im(disp); /* A0 + im -> A0 */
@@ -1198,12 +1208,13 @@ static void gen_movl_seg_T0(DisasContext *s, int seg_reg)
 }
 
 /* generate a push. It depends on ss32, addseg and dflag */
+/* 为push产生指令码 */
 static void gen_push_T0(DisasContext *s)
 {
     if (s->ss32) {
         if (!s->addseg) {
             if (s->dflag)
-                gen_op_pushl_T0();
+                gen_op_pushl_T0(); /* 将T0寄存器的值压栈 */
             else
                 gen_op_pushw_T0();
         } else {
@@ -1342,7 +1353,9 @@ static void gen_enter(DisasContext *s, int esp_addend, int level)
 /* return the next pc address. Return -1 if no insn found. *is_jmp_ptr
    is set to true if the instruction sets the PC (last instruction of
    a basic block) */
-/* 返回下一条指令的地址,如果返回-1,那么表示已经没有指令了. */
+/* 返回下一条指令的地址,如果返回-1,那么表示已经没有指令了. 
+ * disas -> disassembly 反汇编
+ */
 long disas_insn(DisasContext *s, uint8_t *pc_start)
 {
     int b, prefixes, aflag, dflag;
@@ -1498,10 +1511,11 @@ long disas_insn(DisasContext *s, uint8_t *pc_start)
 
             if (mod != 3) {
                 gen_lea_modrm(s, modrm, &reg_addr, &offset_addr);
+                /* 加载到T0寄存器 */
                 gen_op_ld_T0_A0[ot]();
                 opreg = OR_TMP0;
             } else {
-                opreg = rm + OR_EAX;
+                opreg = rm + OR_EAX; /* 目的寄存器 */
             }
 
             switch(b) {
@@ -1517,6 +1531,7 @@ long disas_insn(DisasContext *s, uint8_t *pc_start)
 
             gen_opi(s, op, ot, opreg, val);
             if (op != 7 && mod != 3) {
+                /* 存值T0 -> [A0] */
                 gen_op_st_T0_A0[ot]();
             }
         }
@@ -1553,7 +1568,7 @@ long disas_insn(DisasContext *s, uint8_t *pc_start)
         switch(op) {
         case 0: /* test */
             val = insn_get(s, ot);
-            gen_op_movl_T1_im(val);
+            gen_op_movl_T1_im(val); /* 将立即数val移动到T1寄存器 */
             gen_op_testl_T0_T1_cc();
             s->cc_op = CC_OP_LOGICB + ot;
             break;
@@ -1736,6 +1751,7 @@ long disas_insn(DisasContext *s, uint8_t *pc_start)
         reg = (modrm >> 3) & 7;
 
         gen_ldst_modrm(s, modrm, ot, OR_TMP0, 0);
+        /* 将寄存器reg的值移动到T1寄存器 */
         gen_op_mov_TN_reg[ot][1][reg + OR_EAX]();
         gen_op_testl_T0_T1_cc();
         s->cc_op = CC_OP_LOGICB + ot;
@@ -1862,6 +1878,7 @@ long disas_insn(DisasContext *s, uint8_t *pc_start)
     case 0x58 ... 0x5f: /* pop */
         ot = dflag ? OT_LONG : OT_WORD;
         gen_pop_T0(s);
+        /* 出栈,移动到寄存器T0 */
         gen_op_mov_reg_T0[ot][b & 7]();
         gen_pop_update(s);
         break;
@@ -3633,8 +3650,8 @@ int cpu_x86_gen_code(uint8_t *gen_code_buf, int max_code_size,
 
     /* generate intermediate code */
     /* 产生中间代码 */
-    dc->code32 = (flags >> GEN_FLAG_CODE32_SHIFT) & 1;
-    dc->ss32 = (flags >> GEN_FLAG_SS32_SHIFT) & 1;
+    dc->code32 = (flags >> GEN_FLAG_CODE32_SHIFT) & 1; /* 代码段 */
+    dc->ss32 = (flags >> GEN_FLAG_SS32_SHIFT) & 1; /* 栈段 */
     dc->addseg = (flags >> GEN_FLAG_ADDSEG_SHIFT) & 1;
     dc->f_st = (flags >> GEN_FLAG_ST_SHIFT) & 7;
     dc->vm86 = (flags >> GEN_FLAG_VM_SHIFT) & 1;
@@ -3648,7 +3665,7 @@ int cpu_x86_gen_code(uint8_t *gen_code_buf, int max_code_size,
     dc->is_jmp = 0;
     pc_ptr = pc_start;
     do {
-        ret = disas_insn(dc, pc_ptr);
+        ret = disas_insn(dc, pc_ptr); /* 反汇编指令 */
         if (ret == -1) {
             /* we trigger an illegal instruction operation only if it
                is the first instruction. Otherwise, we simply stop
@@ -3694,6 +3711,7 @@ int cpu_x86_gen_code(uint8_t *gen_code_buf, int max_code_size,
         pc = pc_start;
         while (pc < pc_ptr) {
             fprintf(logfile, "0x%08lx:  ", (long)pc);
+			/* 打印出i386指令 */
             count = print_insn_i386((unsigned long)pc, &disasm_info);
             fprintf(logfile, "\n");
             pc += count;
@@ -3718,6 +3736,7 @@ int cpu_x86_gen_code(uint8_t *gen_code_buf, int max_code_size,
 #endif
 
     /* generate machine code */
+	/* 生成机器码 */
     gen_code_size = dyngen_code(gen_code_buf, gen_opc_buf, gen_opparam_buf);
     flush_icache_range((unsigned long)gen_code_buf, (unsigned long)(gen_code_buf + gen_code_size));
     *gen_code_size_ptr = gen_code_size;
@@ -3740,13 +3759,14 @@ int cpu_x86_gen_code(uint8_t *gen_code_buf, int max_code_size,
 #endif
         disasm_info.mach = bfd_mach_i386_i386;
 
-        pc = gen_code_buf;
+        pc = gen_code_buf; /* pc指针指向第一条生成的代码 */
         disasm_info.buffer = pc;
         disasm_info.buffer_vma = (unsigned long)pc;
         disasm_info.buffer_length = *gen_code_size_ptr;
         fprintf(logfile, "OUT: [size=%d]\n", *gen_code_size_ptr);
         while (pc < gen_code_buf + *gen_code_size_ptr) {
             fprintf(logfile, "0x%08lx:  ", (long)pc);
+			/* 打印出转换后的i386指令 */
             count = print_insn_i386((unsigned long)pc, &disasm_info);
             fprintf(logfile, "\n");
             pc += count;

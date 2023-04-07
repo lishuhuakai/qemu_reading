@@ -143,7 +143,12 @@ register struct CPUX86State *env asm("$12");
 #endif
 #define EIP  (env->eip)
 #define DF  (env->df)
-
+/* QEMU存储一个操作数CC_SRC,结果CC_DST,操作的类型CC_OP
+ * 举一个例子 R = A + B
+ * CC_SRC=A
+ * CC_DST=R 
+ * CC_OP=CC_OP_ADDL
+ */
 #define CC_SRC (env->cc_src)
 #define CC_DST (env->cc_dst)
 #define CC_OP  (env->cc_op)

@@ -1423,7 +1423,7 @@ static int compute_all_eflags(void)
 {
     return CC_SRC;
 }
-
+/* 获得cf标志位 */
 static int compute_c_eflags(void)
 {
     return CC_SRC & CC_C;

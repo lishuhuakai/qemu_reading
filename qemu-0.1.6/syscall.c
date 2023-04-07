@@ -1208,7 +1208,7 @@ long do_syscall(void *cpu_env, int num, long arg1, long arg2, long arg3,
         _exit(arg1);
         ret = 0; /* avoid warning */
         break;
-    case TARGET_NR_read:
+    case TARGET_NR_read: /* 直接执行系统调用 */
         ret = get_errno(read(arg1, (void *)arg2, arg3));
         break;
     case TARGET_NR_write:

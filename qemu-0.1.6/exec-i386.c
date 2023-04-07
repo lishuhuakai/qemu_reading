@@ -270,10 +270,10 @@ static inline TranslationBlock *tb_alloc(void)
     tb = &tbs[nb_tbs++];
     return tb;
 }
-
+/* 代码执行 */
 int cpu_x86_exec(CPUX86State *env1)
 {
-    int saved_T0, saved_T1, saved_A0;
+    int saved_T0, saved_T1, saved_A0; /* 默认仅仅使用了3个寄存器 */
     CPUX86State *saved_env;
 #ifdef reg_EAX
     int saved_EAX;
@@ -350,7 +350,7 @@ int cpu_x86_exec(CPUX86State *env1)
     DF = 1 - (2 * ((env->eflags >> 10) & 1));
     CC_OP = CC_OP_EFLAGS;
     env->eflags &= ~(DF_MASK | CC_O | CC_S | CC_Z | CC_A | CC_P | CC_C);
-    env->interrupt_request = 0;
+    env->interrupt_request = 0; /* 清除中断请求 */
 
     /* prepare setjmp context for exception handling */
     /* 准备setjmp上下文,为异常处理做准备 */
@@ -401,9 +401,9 @@ int cpu_x86_exec(CPUX86State *env1)
                 cpu_unlock();
             }
             /* execute the generated code */
-            tc_ptr = tb->tc_ptr;
+            tc_ptr = tb->tc_ptr; /* 这里指向转换后的i386代码 */
             gen_func = (void *)tc_ptr;
-            gen_func();
+            gen_func(); /* 这里直接执行函数 */
         }
     }
     ret = env->exception_index;

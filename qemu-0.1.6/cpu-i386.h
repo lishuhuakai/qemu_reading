@@ -191,7 +191,7 @@ typedef struct CPUX86State {
     /* exception/interrupt handling */
     jmp_buf jmp_env;
     int exception_index;
-    int interrupt_request;
+    int interrupt_request; /* 是否存在中断请求 */
 
     /* user data */
     void *opaque;
