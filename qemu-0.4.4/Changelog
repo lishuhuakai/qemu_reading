@@ -1,0 +1,139 @@
+version 0.4.4:
+  
+  - full hardware level VGA emulation
+  - graphical display with SDL
+  - added PS/2 mouse and keyboard emulation
+  - popw (%esp) fix
+  - mov to/from segment data width fix
+  - added real mode support
+  - added Bochs BIOS and LGPL'ed VGA BIOS loader in vl
+  - m68k host port (Richard Zidlicky)
+  - partial soft MMU support for memory mapped I/Os
+  - multi-target build
+  - fixed: no error code in hardware interrupts
+  - fixed: pop ss, mov ss, x and sti disable hardware irqs for the next insn
+  - correct single stepping thru string operations
+
+version 0.4.3:
+
+  - x86 exception fix in case of nop instruction.
+  - gcc 3.2.2 bug workaround (RedHat 9 fix)
+  - sparc and Alpha host fixes
+  - many ARM target fixes: 'ls' and 'bash' can be launched.
+
+version 0.4.2:
+
+ - many exception handling fixes (can compile a Linux kernel inside vl)
+ - IDE emulation support
+ - initial GDB stub support
+ - deferred update support for disk images (Rusty Russell)
+ - accept User Mode Linux Copy On Write disk images
+ - SMP kernels can at least be booted
+
+version 0.4.1:
+  
+ - more accurate timer support in vl.
+ - more reliable NE2000 probe in vl.
+ - added 2.5.66 kernel in vl-test.
+ - added VLTMPDIR environment variable in vl.
+
+version 0.4:
+
+ - initial support for ring 0 x86 processor emulation
+ - fixed signal handling for correct dosemu DPMI emulation
+ - fast x86 MMU emulation with mmap()
+ - fixed popl (%esp) case
+ - Linux kernel can be executed by QEMU with the 'vl' command.
+
+version 0.3:
+
+ - initial support for ARM emulation
+ - added fnsave, frstor, fnstenv, fldenv FPU instructions
+ - added FPU register save in signal emulation
+ - initial ARM port
+ - Sparc and Alpha ports work on the regression test
+ - generic ioctl number conversion
+ - fixed ioctl type conversion
+
+version 0.2:
+
+ - PowerPC disassembly and ELF symbols output (Rusty Russell)
+ - flock support (Rusty Russell)
+ - ugetrlimit support (Rusty Russell)
+ - fstat64 fix (Rusty Russell)
+ - initial Alpha port (Falk Hueffner)
+ - initial IA64 port (Matt Wilson)
+ - initial Sparc and Sparc64 port (David S. Miller)
+ - added HLT instruction
+ - LRET instruction fix.
+ - added GPF generation for I/Os.
+ - added INT3 and TF flag support.
+ - SHL instruction C flag fix.
+ - mmap emulation for host page size > 4KB
+ - self-modifying code support
+ - better VM86 support (dosemu works on non trivial programs)
+ - precise exception support (EIP is computed correctly in most cases)
+ - more precise LDT/GDT/IDT emulation
+ - faster segment load in vm86 mode
+ - direct chaining of basic blocks (faster emulation)
+
+version 0.1.6:
+
+ - automatic library search system. QEMU can now work with unpatched
+   ELF dynamic loader and libc (Rusty Russell).
+ - ISO C warning fixes (Alistair Strachan)
+ - first self-virtualizable version (works only as long as the
+   translation cache is not flushed)
+ - RH9 fixes
+
+version 0.1.5:
+
+ - ppc64 support + personality() patch (Rusty Russell)
+ - first Alpha CPU patches (Falk Hueffner)
+ - removed bfd.h dependancy
+ - fixed shrd, shld, idivl and divl on PowerPC.
+ - fixed buggy glibc PowerPC rint() function (test-i386 passes now on PowerPC).
+
+version 0.1.4:
+
+ - more accurate VM86 emulation (can launch small DOS 16 bit
+   executables in wine).
+ - fixed push/pop fs/gs
+ - added iret instruction.
+ - added times() syscall and SIOCATMARK ioctl.
+
+version 0.1.3:
+
+ - S390 support (Ulrich Weigand)
+ - glibc 2.3.x compile fix (Ulrich Weigand)
+ - socketcall endian fix (Ulrich Weigand)
+ - struct sockaddr endian fix (Ulrich Weigand)
+ - sendmsg/recvmsg endian fix (Ulrich Weigand)
+ - execve endian fix (Ulrich Weigand)
+ - fdset endian fix (Ulrich Weigand)
+ - partial setsockopt syscall support (Ulrich Weigand)
+ - more accurate pushf/popf emulation
+ - first partial vm86() syscall support (can be used with runcom example).
+ - added bound, cmpxchg8b, cpuid instructions
+ - added 16 bit addressing support/override for string operations
+ - poll() fix
+ 
+version 0.1.2:
+
+ - compile fixes
+ - xlat instruction
+ - xchg instruction memory lock
+ - added simple vm86 example (not working with QEMU yet). The 54 byte
+   DOS executable 'pi_10.com' program was released by Bertram
+   Felgenhauer (more information at http://www.boo.net/~jasonp/pipage.html).
+
+version 0.1.1:
+
+ - glibc 2.2 compilation fixes
+ - added -s and -L options
+ - binary distribution of x86 glibc and wine
+ - big endian fixes in ELF loader and getdents.
+
+version 0.1:
+
+ - initial public release.
