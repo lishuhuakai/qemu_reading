@@ -48,7 +48,7 @@
 #define R_GS 5
 
 /* segment descriptor fields */
-#define DESC_G_MASK     (1 << 23)
+#define DESC_G_MASK     (1 << 23) /* 粒度Granularity,G为0,段界限以字节为单位,G为1,段界限以4KB为单位 */
 #define DESC_B_SHIFT    22
 #define DESC_B_MASK     (1 << DESC_B_SHIFT)
 #define DESC_AVL_MASK   (1 << 20)
@@ -66,23 +66,36 @@
 #define DESC_W_MASK     (1 << 9)
 
 /* eflags masks */
-#define CC_C   	0x0001
-#define CC_P 	0x0004
+#define CC_C   	0x0001 /* 进位标志 */
+#define CC_P 	0x0004 /* 奇偶标志,它记录相关指令执行之后,其结果的所有bit位中1个个数是否为偶数 */
 #define CC_A	0x0010
-#define CC_Z	0x0040
-#define CC_S    0x0080
-#define CC_O    0x0800
+#define CC_Z	0x0040 /* 零标志位,它记录相关指令执行之后,其结果是否为0 */
+#define CC_S    0x0080 /* 符号标志位,它记录相关指令执行之后,其结果是否为负,如果为负,那么sf=1 */
+#define CC_O    0x0800 /* 溢出标志位 */
 
 #define TF_SHIFT   8
 #define IOPL_SHIFT 12
 #define VM_SHIFT   17
-
+/* 追踪标志TF(Trap Flag)
+ * TF为1,CPU进入单步执行方式,即没执行一条指令,产生一个单步中断请求,这种方式主要用于程序的调试
+ */
 #define TF_MASK 		0x00000100
+/* 中断允许标志位:
+ * IF为1,CPU可以响应CPU网布的可屏蔽中断发出的中断请求,
+ * IF为0,CPU不响应CPU外部的可屏蔽中断发出的中断请求 */
 #define IF_MASK 		0x00000200
 #define DF_MASK 		0x00000400
+/* IO特权标志位:
+ * I/O特权标志用两位二进制位来表示,也称为I/O特权级字段.该字段指定了要求执行I/O指令的特权级.
+ * 如果当前的特权级别在数值上小于等于IOPL的值,那么,该I/O指令可执行,否则将发生一个保护异常.
+ */
 #define IOPL_MASK		0x00003000
 #define NT_MASK	         	0x00004000
 #define RF_MASK			0x00010000
+/* 虚拟8086方式标志VM(Virtual 8086 Mode)
+ * 如果该标志的值为1,则表示处理机处于虚拟的8086方式下的工作状态.
+ * 否则,处理机处于一般保护方式下的工作状态
+ */
 #define VM_MASK			0x00020000
 #define AC_MASK			0x00040000 
 #define VIF_MASK                0x00080000
@@ -114,9 +127,9 @@
 
 #define CR0_PE_MASK  (1 << 0)
 #define CR0_TS_MASK  (1 << 3)
-#define CR0_WP_MASK  (1 << 16)
+#define CR0_WP_MASK  (1 << 16) /* write protect 写保护 */
 #define CR0_AM_MASK  (1 << 18)
-#define CR0_PG_MASK  (1 << 31)
+#define CR0_PG_MASK  (1 << 31) /* 分页允许位 */
 
 #define CR4_VME_MASK  (1 << 0)
 #define CR4_PVI_MASK  (1 << 1)
@@ -289,6 +302,7 @@ typedef struct CPUX86State {
     int error_code;
     int exception_is_int;
     int exception_next_eip;
+    /* 当前正在执行的翻译块 */
     struct TranslationBlock *current_tb; /* currently executing TB */
     uint32_t cr[5]; /* NOTE: cr1 is unused */
     uint32_t dr[8]; /* debug registers */
@@ -301,9 +315,9 @@ typedef struct CPUX86State {
     CPUTLBEntry tlb_write[2][CPU_TLB_SIZE];
     
     /* ice debug support */
-    uint32_t breakpoints[MAX_BREAKPOINTS];
-    int nb_breakpoints;
-    int singlestep_enabled;
+    uint32_t breakpoints[MAX_BREAKPOINTS]; /* 断点 */
+    int nb_breakpoints; /* 断点个数 */
+    int singlestep_enabled; /* 是否启用了单步执行 */
 
     /* user data */
     void *opaque;
@@ -395,7 +409,7 @@ extern uint8_t *phys_ram_base;
 #define X86_DUMP_CCOP 0x0002 /* dump qemu flag cache */
 void cpu_x86_dump_state(CPUX86State *env, FILE *f, int flags);
 
-#define TARGET_PAGE_BITS 12
+#define TARGET_PAGE_BITS 12 /* 页大小为4096 */
 #include "cpu-all.h"
 
 #endif /* CPU_I386_H */

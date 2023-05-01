@@ -180,6 +180,8 @@ static const char *cc_op_str[] = {
     "SARW",
     "SARL",
 };
+
+#define DIRECTION_FLAG 0x0400 /* 方向标志 */
 /* 状态打印 */
 static void cpu_x86_dump_state(FILE *f)
 {

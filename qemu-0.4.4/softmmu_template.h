@@ -91,10 +91,13 @@ DATA_TYPE REGPARM(1) glue(glue(__ld, SUFFIX), _mmu)(unsigned long addr)
     /* test if there is match for unaligned or IO access */
     /* XXX: could done more in memory macro in a non portable way */
     is_user = ((env->hflags & HF_CPL_MASK) == 3);
+    /* 计算addr对应的tlb的索引 */
     index = (addr >> TARGET_PAGE_BITS) & (CPU_TLB_SIZE - 1);
  redo:
     tlb_addr = env->tlb_read[is_user][index].address;
+    /* tlb有效,并且addr的高32bit和tlb_addr的高32bit匹配 */
     if ((addr & TARGET_PAGE_MASK) == (tlb_addr & (TARGET_PAGE_MASK | TLB_INVALID_MASK))) {
+        /* 计算获得物理地址 */
         physaddr = addr + env->tlb_read[is_user][index].addend;
         if (tlb_addr & ~TARGET_PAGE_MASK) {
             /* IO access */
@@ -119,7 +122,10 @@ DATA_TYPE REGPARM(1) glue(glue(__ld, SUFFIX), _mmu)(unsigned long addr)
     return res;
 }
 
-/* handle all unaligned cases */
+/* handle all unaligned cases
+ * 处理所有的不对齐的情况
+ * @param addr 线性地址
+ */
 static DATA_TYPE glue(slow_ld, SUFFIX)(unsigned long addr, void *retaddr)
 {
     DATA_TYPE res, res1, res2;
@@ -129,7 +135,7 @@ static DATA_TYPE glue(slow_ld, SUFFIX)(unsigned long addr, void *retaddr)
     is_user = ((env->hflags & HF_CPL_MASK) == 3);
     index = (addr >> TARGET_PAGE_BITS) & (CPU_TLB_SIZE - 1);
  redo:
-    tlb_addr = env->tlb_read[is_user][index].address;
+    tlb_addr = env->tlb_read[is_user][index].address; /* 获得tlb中记录的线性地址 */
     if ((addr & TARGET_PAGE_MASK) == (tlb_addr & (TARGET_PAGE_MASK | TLB_INVALID_MASK))) {
         physaddr = addr + env->tlb_read[is_user][index].addend;
         if (tlb_addr & ~TARGET_PAGE_MASK) {
@@ -138,6 +144,7 @@ static DATA_TYPE glue(slow_ld, SUFFIX)(unsigned long addr, void *retaddr)
                 goto do_unaligned_access;
             res = glue(io_read, SUFFIX)(physaddr, tlb_addr);
         } else if (((addr & 0xfff) + DATA_SIZE - 1) >= TARGET_PAGE_SIZE) {
+        /* 访问addr横跨了两个page,那就读两次,然后将结果合并起来 */
         do_unaligned_access:
             /* slow unaligned access (it spans two pages) */
             addr1 = addr & ~(DATA_SIZE - 1);
@@ -156,6 +163,7 @@ static DATA_TYPE glue(slow_ld, SUFFIX)(unsigned long addr, void *retaddr)
         }
     } else {
         /* the page is not in the TLB : fill it */
+        /* 使用tlb可以加快线性地址->物理地址的转换速度,仅此而已 */
         tlb_fill(addr, 0, retaddr);
         goto redo;
     }
@@ -174,6 +182,9 @@ void REGPARM(2) glue(glue(__st, SUFFIX), _mmu)(unsigned long addr, DATA_TYPE val
  redo:
     tlb_addr = env->tlb_write[is_user][index].address;
     if ((addr & TARGET_PAGE_MASK) == (tlb_addr & (TARGET_PAGE_MASK | TLB_INVALID_MASK))) {
+        /* 为什么这里physaddr的计算这么奇怪,可以参考cpu_x86_handle_mmu_fault函数
+         * env->tlb_read[is_user][index].addend实际等于physaddr - addr
+         */
         physaddr = addr + env->tlb_read[is_user][index].addend;
         if (tlb_addr & ~TARGET_PAGE_MASK) {
             /* IO access */

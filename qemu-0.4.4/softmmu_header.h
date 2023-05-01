@@ -17,6 +17,28 @@
  * License along with this library; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
+
+/* softmmu_header.h是一个模版文件,以i386为例, exec-i386.h文件中,利用宏生成对应的代码.
+ * 我摘取了一小部分:
+#define MEMUSER 0
+#define DATA_SIZE 1
+#include "softmmu_header.h"
+#undef MEMUSER
+
+#define MEMUSER 1
+#define DATA_SIZE 1
+#include "softmmu_header.h"
+#undef MEMUSER
+ * 通过提供不同的DATA_SIZE,从而生成不同的函数,有CPP中模版的风味.
+ * 上面的例子中,会生成函数:
+ * static inline int ldub_kernel(void *ptr);
+ * static inline int ldsb_kernel(void *ptr);
+ * static inline void stb_kernel(void *ptr, uint8_t v);
+ * static inline int ldub_user(void *ptr);
+ * static inline int ldsb_user(void *ptr); 等
+ * 这是比较高超的技巧.
+ * 当然softmmu_header.h里面又嵌套了softmmu_template.h,有必要的话,可以学习一下这里的技巧.
+ */
 #if DATA_SIZE == 8
 #define SUFFIX q
 #define DATA_TYPE uint64_t

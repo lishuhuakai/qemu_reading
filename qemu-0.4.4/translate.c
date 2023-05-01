@@ -107,12 +107,15 @@ void dump_ops(const uint16_t *opc_buf, const uint32_t *opparam_buf)
    '*gen_code_size_ptr' contains the size of the generated code (host
    code).
 */
+/* 中间代码生成 
+ * @param max_code_size 最多生成的指令的数目
+ */
 int cpu_gen_code(CPUState *env, TranslationBlock *tb,
                  int max_code_size, int *gen_code_size_ptr)
 {
     uint8_t *gen_code_buf;
     int gen_code_size;
-
+    /* 原始码 -> 中间码 */
     if (gen_intermediate_code(env, tb) < 0)
         return -1;
 
@@ -125,6 +128,7 @@ int cpu_gen_code(CPUState *env, TranslationBlock *tb,
     tb->tb_jmp_offset[2] = 0xffff;
     tb->tb_jmp_offset[3] = 0xffff;
 #endif
+    /* 将中间字节码 -> 目标码 */
     gen_code_size = dyngen_code(gen_code_buf, tb->tb_next_offset,
 #ifdef USE_DIRECT_JUMP
                                 tb->tb_jmp_offset,

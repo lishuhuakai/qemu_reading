@@ -181,16 +181,19 @@ static inline int load_segment(uint32_t *e1_ptr, uint32_t *e2_ptr,
     *e2_ptr = ldl(ptr + 4);
     return 0;
 }
-                                     
+
+ /* 段界限 */                                   
 static inline unsigned int get_seg_limit(uint32_t e1, uint32_t e2)
 {
     unsigned int limit;
+    /* e1的低16bit和e2的第16~19bit组合 */
     limit = (e1 & 0xffff) | (e2 & 0x000f0000);
-    if (e2 & DESC_G_MASK)
+    if (e2 & DESC_G_MASK) /* 段界限以4KB为单位 */
         limit = (limit << 12) | 0xfff;
     return limit;
 }
 
+/* 段基址 */
 static inline uint8_t *get_seg_base(uint32_t e1, uint32_t e2)
 {
     return (uint8_t *)((e1 >> 16) | ((e2 & 0xff) << 16) | (e2 & 0xff000000));
@@ -211,7 +214,10 @@ static inline void load_seg_vm(int seg, int selector)
                            (uint8_t *)(selector << 4), 0xffff, 0);
 }
 
-/* protected mode interrupt */
+/* protected mode interrupt 
+ * 保护模式的中断
+ * @param intno 中断号
+ */
 static void do_interrupt_protected(int intno, int is_int, int error_code,
                                    unsigned int next_eip, int is_hw)
 {
@@ -222,7 +228,7 @@ static void do_interrupt_protected(int intno, int is_int, int error_code,
     uint32_t e1, e2, offset, ss, esp, ss_e1, ss_e2, push_size;
     uint32_t old_cs, old_ss, old_esp, old_eip;
 
-    dt = &env->idt;
+    dt = &env->idt; /* 获得中断描述表的地址 */
     if (intno * 8 + 7 > dt->limit)
         raise_exception_err(EXCP0D_GPF, intno * 8 + 2);
     ptr = dt->base + intno * 8;
@@ -234,6 +240,9 @@ static void do_interrupt_protected(int intno, int is_int, int error_code,
     case 5: /* task gate */
         cpu_abort(env, "task gate not supported");
         break;
+    /* 6 -- 中断门
+     * 7 -- 陷阱门
+     */
     case 6: /* 286 interrupt gate */
     case 7: /* 286 trap gate */
     case 14: /* 386 interrupt gate */
@@ -243,12 +252,14 @@ static void do_interrupt_protected(int intno, int is_int, int error_code,
         raise_exception_err(EXCP0D_GPF, intno * 8 + 2);
         break;
     }
+    /* 获得dpl -- 描述符特权级别 */
     dpl = (e2 >> DESC_DPL_SHIFT) & 3;
     cpl = env->hflags & HF_CPL_MASK;
     /* check privledge if software int */
     if (is_int && dpl < cpl)
         raise_exception_err(EXCP0D_GPF, intno * 8 + 2);
     /* check valid bit */
+    /* P为段存在位(Segment Present),如果段不存在,报错即可 */
     if (!(e2 & DESC_P_MASK))
         raise_exception_err(EXCP0B_NOSEG, intno * 8 + 2);
     selector = e1 >> 16;
@@ -317,6 +328,7 @@ static void do_interrupt_protected(int intno, int is_int, int error_code,
         old_esp = ESP;
         old_ss = env->segs[R_SS].selector;
         ss = (ss & ~3) | dpl;
+        /* 加载新的堆栈 */
         cpu_x86_load_seg_cache(env, R_SS, ss, 
                        get_seg_base(ss_e1, ss_e2),
                        get_seg_limit(ss_e1, ss_e2),
@@ -332,6 +344,7 @@ static void do_interrupt_protected(int intno, int is_int, int error_code,
         old_eip = env->eip;
     old_cs = env->segs[R_CS].selector;
     selector = (selector & ~3) | dpl;
+    /* 加载指令 */
     cpu_x86_load_seg_cache(env, R_CS, selector, 
                    get_seg_base(e1, e2),
                    get_seg_limit(e1, e2),
@@ -360,31 +373,31 @@ static void do_interrupt_protected(int intno, int is_int, int error_code,
         }
         ssp -= 4;
         old_eflags = compute_eflags();
-        stl(ssp, old_eflags);
+        stl(ssp, old_eflags); /* 压入eflags */
         ssp -= 4;
-        stl(ssp, old_cs);
+        stl(ssp, old_cs); /* 压入old_cs */
         ssp -= 4;
-        stl(ssp, old_eip);
+        stl(ssp, old_eip); /* 压入old_eip */
         if (has_error_code) {
             ssp -= 4;
-            stl(ssp, error_code);
+            stl(ssp, error_code); /* 压入error code */
         }
     } else {
-        if (new_stack) {
+        if (new_stack) { /* 如果需要切换新的堆栈 */
             ssp -= 2;
-            stw(ssp, old_ss);
+            stw(ssp, old_ss); /* 压入old_ss */
             ssp -= 2;
-            stw(ssp, old_esp);
+            stw(ssp, old_esp); /* 压入old_esp */
         }
         ssp -= 2;
-        stw(ssp, compute_eflags());
+        stw(ssp, compute_eflags()); /* 压入eflags */
         ssp -= 2;
-        stw(ssp, old_cs);
+        stw(ssp, old_cs);  /* 压入old_cs */
         ssp -= 2;
-        stw(ssp, old_eip);
+        stw(ssp, old_eip); /* 压入old_eip */
         if (has_error_code) {
             ssp -= 2;
-            stw(ssp, error_code);
+            stw(ssp, error_code); /* 压入error code */
         }
     }
     
@@ -395,7 +408,11 @@ static void do_interrupt_protected(int intno, int is_int, int error_code,
     env->eflags &= ~(TF_MASK | VM_MASK | RF_MASK | NT_MASK);
 }
 
-/* real mode interrupt */
+/* real mode interrupt
+ * 实模式中断
+ * @param intno 中断号
+ * @param is_int
+ */
 static void do_interrupt_real(int intno, int is_int, int error_code,
                                  unsigned int next_eip)
 {
@@ -406,29 +423,31 @@ static void do_interrupt_real(int intno, int is_int, int error_code,
     uint32_t old_cs, old_eip;
 
     /* real mode (simpler !) */
-    dt = &env->idt;
+    dt = &env->idt; /* 获取中断描述表 */
     if (intno * 4 + 3 > dt->limit)
         raise_exception_err(EXCP0D_GPF, intno * 8 + 2);
-    ptr = dt->base + intno * 4;
+    ptr = dt->base + intno * 4; /* 根据中断号,获得中断服务程序ISR */
     offset = lduw(ptr);
     selector = lduw(ptr + 2);
-    esp = ESP;
+    /* ss:esp 堆栈,注意,这里没有将ss以及eip压栈,也就是中断应该是发生在内核空间 */
+    esp = ESP; /* 保存esp,也就是堆栈寄存器的值 */
     ssp = env->segs[R_SS].base;
     if (is_int)
         old_eip = next_eip;
     else
         old_eip = env->eip;
-    old_cs = env->segs[R_CS].selector;
+    old_cs = env->segs[R_CS].selector; /* 记录下中断之前cs段寄存器的值,方便返回 */
     esp -= 2;
-    stw(ssp + (esp & 0xffff), compute_eflags());
+    stw(ssp + (esp & 0xffff), compute_eflags()); /* 压入old_eflags */
     esp -= 2;
-    stw(ssp + (esp & 0xffff), old_cs);
+    stw(ssp + (esp & 0xffff), old_cs); /* 压入old_cs */
     esp -= 2;
-    stw(ssp + (esp & 0xffff), old_eip);
+    stw(ssp + (esp & 0xffff), old_eip); /* 压入old_eip */
     
     /* update processor state */
-    ESP = (ESP & ~0xffff) | (esp & 0xffff);
-    env->eip = offset;
+    /* 更新处理器状态 */
+    ESP = (ESP & ~0xffff) | (esp & 0xffff); /* 更新esp寄存器的值 */
+    env->eip = offset; /* 更新eip寄存器的值 */
     env->segs[R_CS].selector = selector;
     env->segs[R_CS].base = (uint8_t *)(selector << 4);
     env->eflags &= ~(IF_MASK | TF_MASK | AC_MASK | RF_MASK);
@@ -464,13 +483,14 @@ void do_interrupt_user(int intno, int is_int, int error_code,
  * Begin excution of an interruption. is_int is TRUE if coming from
  * the int instruction. next_eip is the EIP value AFTER the interrupt
  * instruction. It is only relevant if is_int is TRUE.  
+ * 开始处理中断,模拟x86的cpu中断
  */
 void do_interrupt(int intno, int is_int, int error_code, 
                   unsigned int next_eip, int is_hw)
 {
-    if (env->cr[0] & CR0_PE_MASK) {
+    if (env->cr[0] & CR0_PE_MASK) { /* 保护模式 */
         do_interrupt_protected(intno, is_int, error_code, next_eip, is_hw);
-    } else {
+    } else { /* 实模式 */
         do_interrupt_real(intno, is_int, error_code, next_eip);
     }
 }
@@ -1208,7 +1228,7 @@ void helper_lret_protected(int shift, int addend)
 
 void helper_movl_crN_T0(int reg)
 {
-    env->cr[reg] = T0;
+    env->cr[reg] = T0; /* 将T0寄存器的值放入cr[reg]之中 */
     switch(reg) {
     case 0:
         cpu_x86_update_cr0(env);
@@ -1783,6 +1803,11 @@ void helper_frstor(uint8_t *ptr, int data32)
 #include "softmmu_template.h"
 
 /* try to fill the TLB and return an exception if error */
+/* 尝试更新tlb
+ * @param addr 线性地址
+ * @param is_write 是否为写操作
+ * @param retaddr 返回后的物理地址会写入此结构
+ */
 void tlb_fill(unsigned long addr, int is_write, void *retaddr)
 {
     TranslationBlock *tb;

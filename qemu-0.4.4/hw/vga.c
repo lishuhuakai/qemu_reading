@@ -1374,8 +1374,11 @@ int vga_init(DisplayState *ds, uint8_t *vga_ram_base,
     register_ioport_read(0x3d4, 2, vga_ioport_read, 1);
     register_ioport_read(0x3ba, 1, vga_ioport_read, 1);
     register_ioport_read(0x3da, 1, vga_ioport_read, 1);
-
+    /* 注意这个vga_io_memory, 每个硬件都有一段地址空间, 大致为1<< IO_MEM_SHIFT,也就是16字节
+     * 调用cpu_register_physical_memory之后,会返回注册的io地址空间的首地址
+     */
     vga_io_memory = cpu_register_io_memory(0, vga_mem_read, vga_mem_write);
+    /* 长度大致为8192字节,页面大小4k的话,这就是2个page */
     cpu_register_physical_memory(0xa0000, 0x20000, vga_io_memory);
     return 0;
 }

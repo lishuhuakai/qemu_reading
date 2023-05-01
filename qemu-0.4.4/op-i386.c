@@ -975,7 +975,9 @@ void OPPROTO op_ltr_T0(void)
     helper_ltr_T0();
 }
 
-/* CR registers access */
+/* CR registers access 
+ * 访问CR寄存器
+ */
 void OPPROTO op_movl_crN_T0(void)
 {
     helper_movl_crN_T0(PARAM1);
@@ -1263,14 +1265,14 @@ static int compute_c_eflags(void)
 {
     return CC_SRC & CC_C;
 }
-
+/* 计算进位标记 */
 static int compute_c_mul(void)
 {
     int cf;
     cf = (CC_SRC != 0);
     return cf;
 }
-
+/* 计算所有的标记 */
 static int compute_all_mul(void)
 {
     int cf, pf, af, zf, sf, of;

@@ -160,7 +160,7 @@ static int last_pg_state = -1;
 static int last_pe_state = 0;
 int phys_ram_size;
 int phys_ram_fd;
-uint8_t *phys_ram_base;
+uint8_t *phys_ram_base; /* 虚拟的x86的物理内存的基址 */
 /* 更新cr0寄存器 */
 void cpu_x86_update_cr0(CPUX86State *env)
 {
@@ -184,8 +184,8 @@ void cpu_x86_update_cr0(CPUX86State *env)
 
 void cpu_x86_update_cr3(CPUX86State *env)
 {
-    if (env->cr[0] & CR0_PG_MASK) {
-#if defined(DEBUG_MMU)
+    if (env->cr[0] & CR0_PG_MASK) { /* 开启分页 */
+#if defined(DEBUG_MMU) /* 打印页目录项基址 */
         printf("CR3 update: CR3=%08x\n", env->cr[3]);
 #endif
         page_unmap();
@@ -199,7 +199,10 @@ void cpu_x86_init_mmu(CPUX86State *env)
     cpu_x86_update_cr0(env);
 }
 
-/* XXX: also flush 4MB pages */
+/* XXX: also flush 4MB pages 
+ * 关于tlb, 它的实质是一个缓存,实现线性地址->物理地址的转换.
+ * @param addr 线性地址
+ */
 void cpu_x86_flush_tlb(CPUX86State *env, uint32_t addr)
 {
     int flags;
@@ -208,8 +211,9 @@ void cpu_x86_flush_tlb(CPUX86State *env, uint32_t addr)
     tlb_flush_page(env, addr);
 
     flags = page_get_flags(addr);
-    if (flags & PAGE_VALID) {
-        virt_addr = addr & ~0xfff;
+    if (flags & PAGE_VALID) { /* 页面有效 */
+        /* 这里的virt_addr,其实是addr所在page的首地址 */
+        virt_addr = addr & ~0xfff; 
         munmap((void *)virt_addr, 4096);
         page_set_flags(virt_addr, virt_addr + 4096, 0);
     }
@@ -221,6 +225,9 @@ void cpu_x86_flush_tlb(CPUX86State *env, uint32_t addr)
    1  = generate PF fault
    2  = soft MMU activation required for this block
 */
+/* 处理mmu映射缺失的异常
+ * @param addr 线性地址
+ */
 int cpu_x86_handle_mmu_fault(CPUX86State *env, uint32_t addr, int is_write)
 {
     uint8_t *pde_ptr, *pte_ptr;
@@ -230,8 +237,10 @@ int cpu_x86_handle_mmu_fault(CPUX86State *env, uint32_t addr, int is_write)
     
     cpl = env->hflags & HF_CPL_MASK;
     is_user = (cpl == 3);
-    
-#ifdef DEBUG_MMU
+#if defined(YDEBUG_MMU)
+    printf("================\n");
+#endif
+#if defined(DEBUG_MMU)
     printf("MMU fault: addr=0x%08x w=%d u=%d eip=%08x\n", 
            addr, is_write, is_user, env->eip);
 #endif
@@ -241,18 +250,29 @@ int cpu_x86_handle_mmu_fault(CPUX86State *env, uint32_t addr, int is_write)
         error_code = 0;
         goto do_fault;
     }
-
-    if (!(env->cr[0] & CR0_PG_MASK)) {
+#if defined(YDEBUG_MMU)
+    printf("[D] softmmu=%d, paging=%d, is_user=%d\n", !!(env->hflags & HF_SOFTMMU_MASK), 
+           !!(env->cr[0] & CR0_PG_MASK), is_user);
+#endif
+    if (!(env->cr[0] & CR0_PG_MASK)) { /* 没有开启分页,那么物理地址其实就是线性地址 */
         pte = addr;
-        virt_addr = addr & ~0xfff;
+        virt_addr = addr & ~0xfff; /* 取高8位 */
         prot = PROT_READ | PROT_WRITE;
         page_size = 4096;
         goto do_mapping;
     }
 
-    /* page directory entry */
+    /* page directory entry 
+     * 页目录项
+     * cr[3] & ~0xfff 也就是取cr[3]的高20位,为页目录的基地址(物理地址)
+     * ((addr >> 20) & ~3) 为页目录地址偏移,后面的 & ~3为保证4字节对齐
+     * 两者相加,可以获得addr对应的页目录项的物理地址
+     */
     pde_ptr = phys_ram_base + ((env->cr[3] & ~0xfff) + ((addr >> 20) & ~3));
-    pde = ldl(pde_ptr);
+    pde = ldl(pde_ptr); /* 取出页目录表项 */
+#if defined(YDEBUG_MMU)
+    printf("[D] pde_ptr=0x%08x, *pde=0x%08x\n", pde_ptr, pde);
+#endif
     if (!(pde & PG_PRESENT_MASK)) {
         error_code = 0;
         goto do_fault;
@@ -278,17 +298,25 @@ int cpu_x86_handle_mmu_fault(CPUX86State *env, uint32_t addr, int is_write)
         }
         
         pte = pde & ~0x003ff000; /* align to 4MB */
-        page_size = 4096 * 1024;
+        page_size = 4096 * 1024; /* 一页的大小为4MB */
         virt_addr = addr & ~0x003fffff;
-    } else {
+    } else { /* 暂时先忽略PSE */
         if (!(pde & PG_ACCESSED_MASK)) {
             pde |= PG_ACCESSED_MASK;
             stl(pde_ptr, pde);
         }
 
         /* page directory entry */
+        /* 页表
+         * (pde & ~0xfff) 用于取高20bit,为页表基址
+         *  (addr >> 10) & 0xffc 页表项在页表内的偏移
+         * 两者相加,为addr对应的页表项的物理地址(需要加上偏移)
+         */
         pte_ptr = phys_ram_base + ((pde & ~0xfff) + ((addr >> 10) & 0xffc));
-        pte = ldl(pte_ptr);
+        pte = ldl(pte_ptr); /* 取出页表项,页表项4字节 */
+#if defined(YDEBUG_MMU)
+        printf("[D] pte_ptr=%08x, *pte=%08x\n", pte_ptr, pte);
+#endif
         if (!(pte & PG_PRESENT_MASK)) {
             error_code = 0;
             goto do_fault;
@@ -310,8 +338,13 @@ int cpu_x86_handle_mmu_fault(CPUX86State *env, uint32_t addr, int is_write)
                 pte |= PG_DIRTY_MASK;
             stl(pte_ptr, pte);
         }
+        /* page大小为4096,也就是4k */
         page_size = 4096;
+        /* 取addr的高20位,其他位全部为0, 这里的virt_addr实际指的是addr所在page的首地址 */
         virt_addr = addr & ~0xfff;
+#if defined(YDEBUG_MMU)
+        printf("[D] addr=0x%08x virt_addr=0x%08x\n", addr, virt_addr);
+#endif
     }
     /* the page can be put in the TLB */
     prot = PROT_READ;
@@ -324,29 +357,45 @@ int cpu_x86_handle_mmu_fault(CPUX86State *env, uint32_t addr, int is_write)
             prot |= PROT_WRITE;
     }
     
- do_mapping:
-    if (env->hflags & HF_SOFTMMU_MASK) {
+ do_mapping: /* 做映射 */
+    /* softmmu不开其实影响不大,只是模拟的cpu执行效率会有所下降而已. */
+    if (env->hflags & HF_SOFTMMU_MASK) { /* softmmu启用,在大多数时候,softmmu都是不会启用的 */
         unsigned long paddr, vaddr, address, addend, page_offset;
         int index;
 
         /* software MMU case. Even if 4MB pages, we map only one 4KB
            page in the cache to avoid filling it too fast */
-        page_offset = (addr & ~0xfff) & (page_size - 1);
-        paddr = (pte & ~0xfff) + page_offset;
-        vaddr = virt_addr + page_offset;
+        /* addr & ~0xfff 用于取线性地址的高20bit, 按照道理来说,页内偏移应该是12位
+         * 页内偏移不是(addr & 0xfff) & (page_size - 1)吗?
+         * 没有错,addr对应的页内偏移确实是(addr & 0xfff) & (page_size - 1).
+         * 如果没有开启分页,那么vaddr等于paddr
+         * page_size为4096的情况下,page_offset为0,这里说明一下,这里的映射是以page为单位的,线性地址addr
+         * 并不总是和page的大小对齐,对于这样的addr,这里的tlb实际记录的是addr所在page首地址(线性地址)和
+         * 物理page的物理首地址映射.
+         * 如果page_size为4M, 那么page_offset不为0.
+         */
+        page_offset = (addr & ~0xfff) & (page_size - 1); /* 页内偏移 */
+        paddr = (pte & ~0xfff) + page_offset; /* 计算物理page页的首地址(物理地址) */
+        vaddr = virt_addr + page_offset; /* 计算addr所在page的首地址(线性地址) */
+        /* 2^20 ==> 256,tlb必然会不断更新 */
         index = (addr >> 12) & (CPU_TLB_SIZE - 1);
         pd = physpage_find(paddr);
+#if defined(YDEBUG_MMU)
+        printf("[D] addr=%08x, page_size=%d, page_offset=%08x, pd=%08xd, vaddr=%08x\n", 
+               addr, page_size, page_offset, pd, vaddr);
+#endif
         if (pd & 0xfff) {
             /* IO memory case */
             address = vaddr | pd;
             addend = paddr;
+            printf("[D] address=0x%08x, addend=0x%08x\n", address, addend);
         } else {
             /* standard memory */
-            address = vaddr;
-            addend = (unsigned long)phys_ram_base + pd;
+            address = vaddr; /* addr所在page的首地址(线性地址) */
+            addend = (unsigned long)phys_ram_base + pd; /* addr所在page映射到的物理page的首地址(物理地址) */
         }
-        addend -= vaddr;
-        env->tlb_read[is_user][index].address = address;
+        addend -= vaddr; /* 注意这里减去了vaddr,至于意图,可以参考tlb的使用方法 */
+        env->tlb_read[is_user][index].address = address; /* tlb记录下线性地址->物理地址的映射关系 */
         env->tlb_read[is_user][index].addend = addend;
         if (prot & PROT_WRITE) {
             env->tlb_write[is_user][index].address = address;
@@ -354,7 +403,9 @@ int cpu_x86_handle_mmu_fault(CPUX86State *env, uint32_t addr, int is_write)
         }
     }
     ret = 0;
+    /* 模拟内存的映射 */
     /* XXX: incorrect for 4MB pages */
+    /* pte为页表项, pd为addr所在的page对应的物理page相对于物理内存起始位置的偏移 */
     pd = physpage_find(pte & ~0xfff);
     if ((pd & 0xfff) != 0) {
         /* IO access: no mapping is done as it will be handled by the
@@ -363,6 +414,7 @@ int cpu_x86_handle_mmu_fault(CPUX86State *env, uint32_t addr, int is_write)
             ret = 2;
     } else {
         void *map_addr;
+        /* virt_addr为本进程内的地址, pte & ~0xfff */
         map_addr = mmap((void *)virt_addr, page_size, prot, 
                         MAP_SHARED | MAP_FIXED, phys_ram_fd, pd);
         if (map_addr == MAP_FAILED) {
@@ -371,10 +423,11 @@ int cpu_x86_handle_mmu_fault(CPUX86State *env, uint32_t addr, int is_write)
                     pte & ~0xfff, virt_addr);
             exit(1);
         }
-#ifdef DEBUG_MMU
-        printf("mmaping 0x%08x to virt 0x%08x pse=%d\n", 
-               pte & ~0xfff, virt_addr, (page_size != 4096));
-#endif
+#if defined(DEBUG_MMU)
+        printf("mmaping 0x%08x to virt 0x%08x pse=%d pd=0x%08x\n", 
+               pte & ~0xfff, virt_addr, (page_size != 4096), pd);
+#endif      
+        /* 一旦映射建立成功,那么就设置页描述符的PAGE_VALID和其他相关属性 */
         page_set_flags(virt_addr, virt_addr + page_size, 
                        PAGE_VALID | PAGE_EXEC | prot);
     }

@@ -89,6 +89,7 @@ extern int loglevel;
 #define PREFIX_ADR    0x10
 #define PREFIX_FWAIT  0x20
 
+/* 指令上下文 */
 typedef struct DisasContext {
     /* current insn context */
     int override; /* -1 if no override */
@@ -833,22 +834,26 @@ static void gen_opi(DisasContext *s1, int op, int ot, int d, int c)
     gen_op(s1, op, ot, d, OR_TMP1);
 }
 
-/* 自增指令产生代码 */
+/* 自增/自减指令产生代码
+ * @param ot 操作数占用字节数
+ * @param d 用于指示操作数位于哪一个寄存器之中
+ * @param c 增量,可选值有+1,表示自增, -1,表示自减
+ */
 static void gen_inc(DisasContext *s1, int ot, int d, int c)
 {
     if (d != OR_TMP0)
-        gen_op_mov_TN_reg[ot][0][d]();
+        gen_op_mov_TN_reg[ot][0][d](); /* 移动到T0寄存器, reg由d决定 */
     if (s1->cc_op != CC_OP_DYNAMIC)
-        gen_op_set_cc_op(s1->cc_op);
-    if (c > 0) {
+        gen_op_set_cc_op(s1->cc_op); /* 需要提前计算eflags */
+    if (c > 0) { /* 自增 */
         gen_op_incl_T0_cc();
-        s1->cc_op = CC_OP_INCB + ot;
-    } else {
+        s1->cc_op = CC_OP_INCB + ot; /* 更新cc_op */
+    } else { /* 自减 */
         gen_op_decl_T0_cc();
         s1->cc_op = CC_OP_DECB + ot;
     }
     if (d != OR_TMP0)
-        gen_op_mov_reg_T0[ot][d]();
+        gen_op_mov_reg_T0[ot][d](); /* 将结果移动到reg寄存器之中,reg由d指定 */
 }
 
 static void gen_shift(DisasContext *s1, int op, int ot, int d, int s)
@@ -1425,7 +1430,7 @@ long disas_insn(DisasContext *s, uint8_t *pc_start)
         gen_op_lock();
 
     /* now check op code */
- reswitch:
+ reswitch: /* 检查操作码 */
     switch(b) {
     case 0x0f:
         /**************************/
@@ -1468,7 +1473,7 @@ long disas_insn(DisasContext *s, uint8_t *pc_start)
                 }
                 gen_op(s, op, ot, opreg, reg);
                 if (mod != 3 && op != 7) {
-                    gen_op_st_T0_A0[ot]();
+                    gen_op_st_T0_A0[ot](); /* 存值 */
                 }
                 break;
             case 1: /* OP Gv, Ev */
@@ -1541,11 +1546,11 @@ long disas_insn(DisasContext *s, uint8_t *pc_start)
         /* inc, dec, and other misc arith */
     case 0x40 ... 0x47: /* inc Gv */
         ot = dflag ? OT_LONG : OT_WORD;
-        gen_inc(s, ot, OR_EAX + (b & 7), 1);
+        gen_inc(s, ot, OR_EAX + (b & 7), 1); /* 自增 */
         break;
     case 0x48 ... 0x4f: /* dec Gv */
         ot = dflag ? OT_LONG : OT_WORD;
-        gen_inc(s, ot, OR_EAX + (b & 7), -1);
+        gen_inc(s, ot, OR_EAX + (b & 7), -1); /* 自减 */
         break;
     case 0xf6: /* GRP3 */
     case 0xf7:
@@ -1590,7 +1595,7 @@ long disas_insn(DisasContext *s, uint8_t *pc_start)
             s->cc_op = CC_OP_SUBB + ot;
             break;
         case 4: /* mul */
-            switch(ot) {
+            switch(ot) { /* ot为操作数占用的字节数 */
             case OT_BYTE:
                 gen_op_mulb_AL_T0();
                 break;
@@ -1602,7 +1607,7 @@ long disas_insn(DisasContext *s, uint8_t *pc_start)
                 gen_op_mull_EAX_T0();
                 break;
             }
-            s->cc_op = CC_OP_MUL;
+            s->cc_op = CC_OP_MUL; /* 乘法会影响eflags,更新cc_op */
             break;
         case 5: /* imul */
             switch(ot) {
@@ -1617,7 +1622,7 @@ long disas_insn(DisasContext *s, uint8_t *pc_start)
                 gen_op_imull_EAX_T0();
                 break;
             }
-            s->cc_op = CC_OP_MUL;
+            s->cc_op = CC_OP_MUL; /* 乘法会影响eflags,更新cc_op */
             break;
         case 6: /* div */
             switch(ot) {
@@ -1754,7 +1759,7 @@ long disas_insn(DisasContext *s, uint8_t *pc_start)
         /* 将寄存器reg的值移动到T1寄存器 */
         gen_op_mov_TN_reg[ot][1][reg + OR_EAX]();
         gen_op_testl_T0_T1_cc();
-        s->cc_op = CC_OP_LOGICB + ot;
+        s->cc_op = CC_OP_LOGICB + ot; /* logicb会影响eflags,更新cc_op */
         break;
 
     case 0xa8: /* test eAX, Iv */
@@ -1768,7 +1773,7 @@ long disas_insn(DisasContext *s, uint8_t *pc_start)
         gen_op_mov_TN_reg[ot][0][OR_EAX]();
         gen_op_movl_T1_im(val);
         gen_op_testl_T0_T1_cc();
-        s->cc_op = CC_OP_LOGICB + ot;
+        s->cc_op = CC_OP_LOGICB + ot;  /* logicb会影响eflags,更新cc_op */
         break;
 
     case 0x98: /* CWDE/CBW */
@@ -3295,6 +3300,7 @@ long disas_insn(DisasContext *s, uint8_t *pc_start)
 #define CC_OSZAP (CC_O | CC_S | CC_Z | CC_A | CC_P)
 
 /* flags read by an operation */
+/* 指令需要读取的标志 */
 static uint16_t opc_read_flags[NB_OPS] = {
     [INDEX_op_aas] = CC_A,
     [INDEX_op_aaa] = CC_A,
@@ -3395,6 +3401,7 @@ static uint16_t opc_read_flags[NB_OPS] = {
 };
 
 /* flags written by an operation */
+/* 这里以数组的方式记录了每条指令可能修改的标志 */
 static uint16_t opc_write_flags[NB_OPS] = {
     [INDEX_op_addl_T0_T1_cc] = CC_OSZAPC,
     [INDEX_op_orl_T0_T1_cc] = CC_OSZAPC,
@@ -3560,26 +3567,36 @@ static void optimize_flags_init(void)
 /* CPU flags computation optimization: we move backward thru the
    generated code to see which flags are needed. The operation is
    modified if suitable */
+/* CPU标志(flags)计算优化,这个函数属于优化,从功能的角度,可以省略掉 */
 static void optimize_flags(uint16_t *opc_buf, int opc_buf_len)
 {
     uint16_t *opc_ptr;
     int live_flags, write_flags, op;
 
-    opc_ptr = opc_buf + opc_buf_len;
+    opc_ptr = opc_buf + opc_buf_len; /* 指向最后一条指令 */
     /* live_flags contains the flags needed by the next instructions
        in the code. At the end of the bloc, we consider that all the
        flags are live. */
+    /* live_flags包含被下一条指令所需的标志,在bloc的最后,我们认为所有的标志都需要 */
     live_flags = CC_OSZAPC;
     while (opc_ptr > opc_buf) {
-        op = *--opc_ptr;
+        op = *--opc_ptr; /* 从后往前遍历 */
         /* if none of the flags written by the instruction is used,
            then we can try to find a simpler instruction */
+        /* 如果指令不会更改任何标志,那么我们可以尝试将其替换为一条更加简单的指令
+         * live_flags & write_flags为0表示本条指令不会更改下一条指令所读取的标志
+         * 更加直白一点,那就是本条指令和下一条指令无关联
+         */
         write_flags = opc_write_flags[op];
         if ((live_flags & write_flags) == 0) {
             *opc_ptr = opc_simpler[op];
         }
         /* compute the live flags before the instruction */
+        /* 计算该指令的前一条指令所需要的live flags */
         live_flags &= ~write_flags;
+        /* 指令需要读取的标志,记住,这个live_flags供上一条指令使用,它表示下一条指令(也就是
+         * 本指令)所需要的标志
+         */
         live_flags |= opc_read_flags[op];
     }
 }
@@ -3655,7 +3672,7 @@ int cpu_x86_gen_code(uint8_t *gen_code_buf, int max_code_size,
     dc->addseg = (flags >> GEN_FLAG_ADDSEG_SHIFT) & 1;
     dc->f_st = (flags >> GEN_FLAG_ST_SHIFT) & 7;
     dc->vm86 = (flags >> GEN_FLAG_VM_SHIFT) & 1;
-    dc->cc_op = CC_OP_DYNAMIC;
+    dc->cc_op = CC_OP_DYNAMIC; /* 动态获取flags */
     dc->cs_base = cs_base;
 
     gen_opc_ptr = gen_opc_buf;
@@ -3680,6 +3697,7 @@ int cpu_x86_gen_code(uint8_t *gen_code_buf, int max_code_size,
     /* we must store the eflags state if it is not already done */
     if (dc->cc_op != CC_OP_DYNAMIC)
         gen_op_set_cc_op(dc->cc_op);
+    /* 更新模拟cpu的eip寄存器的值 */
     if (dc->is_jmp != 1) {
         /* we add an additionnal jmp to update the simulated PC */
         gen_op_jmp_im(ret - (unsigned long)dc->cs_base);
