@@ -215,12 +215,12 @@ void OPPROTO op_negl_T0_cc(void)
     T0 = -T0;
     CC_DST = T0;
 }
-
+/* 自增 */
 void OPPROTO op_incl_T0_cc(void)
 {
     CC_SRC = cc_table[CC_OP].compute_c();
     T0++;
-    CC_DST = T0;
+    CC_DST = T0; /* 记录下结果 */
 }
 
 void OPPROTO op_decl_T0_cc(void)

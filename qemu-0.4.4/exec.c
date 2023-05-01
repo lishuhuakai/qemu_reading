@@ -46,7 +46,7 @@
 
 #define CODE_GEN_MAX_BLOCKS    (CODE_GEN_BUFFER_SIZE / 64)
 
-TranslationBlock tbs[CODE_GEN_MAX_BLOCKS];
+TranslationBlock tbs[CODE_GEN_MAX_BLOCKS]; /* 记录下所有的translation block */
 TranslationBlock *tb_hash[CODE_GEN_HASH_SIZE];
 int nb_tbs;
 /* any access to the tbs or the page table must use this lock */
@@ -78,7 +78,7 @@ unsigned long host_page_mask;
 static PageDesc *l1_map[L1_SIZE];
 
 /* io memory support */
-static unsigned long *l1_physmap[L1_SIZE];
+static unsigned long *l1_physmap[L1_SIZE]; /* 一级映射表 */
 CPUWriteMemoryFunc *io_mem_write[IO_MEM_NB_ENTRIES][4];
 CPUReadMemoryFunc *io_mem_read[IO_MEM_NB_ENTRIES][4];
 static int io_mem_nb;
@@ -141,6 +141,12 @@ void page_dump(FILE *f)
     }
 }
 
+/* 为了方便管理page,定义了一个二维数组,任意一个线性地址,都可以映射到一个对应的PageDesc结构
+ * addr一共32位,低12位是页内偏移,addr >> 12为page的索引,也就是这里的index,l1_map实际是一个二维数组.
+ * 为了进一步方便管理,对这20位的索引再次拆分,index的高10位,也就是L2_BITS作为l1_map数组中第一维的索引
+ * index的低10位,作为第二维中的索引.
+ * @param index 页的编号
+ */
 static inline PageDesc *page_find_alloc(unsigned int index)
 {
     PageDesc **lp, *p;
@@ -166,6 +172,9 @@ static inline PageDesc *page_find(unsigned int index)
     return p + (index & (L2_SIZE - 1));
 }
 
+/* 获取address所谓page的属性
+ * @param address 线性地址
+ */
 int page_get_flags(unsigned long address)
 {
     PageDesc *p;
@@ -179,6 +188,10 @@ int page_get_flags(unsigned long address)
 /* modify the flags of a page and invalidate the code if
    necessary. The flag PAGE_WRITE_ORG is positionned automatically
    depending on PAGE_WRITE */
+/* 修改一个page的标记并且如果有必要的话,无效化code 
+ * @param start 起始的线性地址
+ * @param end 结尾的线性地址
+ */
 void page_set_flags(unsigned long start, unsigned long end, int flags)
 {
     PageDesc *p;
@@ -189,6 +202,7 @@ void page_set_flags(unsigned long start, unsigned long end, int flags)
     if (flags & PAGE_WRITE)
         flags |= PAGE_WRITE_ORG;
     spin_lock(&tb_lock);
+    /* 遍历对应的page */
     for(addr = start; addr < end; addr += TARGET_PAGE_SIZE) {
         p = page_find_alloc(addr >> TARGET_PAGE_BITS);
         /* if the write protection is set, then we invalidate the code
@@ -196,9 +210,9 @@ void page_set_flags(unsigned long start, unsigned long end, int flags)
         if (!(p->flags & PAGE_WRITE) && 
             (flags & PAGE_WRITE) &&
             p->first_tb) {
-            tb_invalidate_page(addr);
+            tb_invalidate_page(addr); /* 使得对应的tlb失效 */
         }
-        p->flags = flags;
+        p->flags = flags; /* 更新flags参数 */
     }
     spin_unlock(&tb_lock);
 }
@@ -459,6 +473,7 @@ static inline void tb_alloc_page(TranslationBlock *tb, unsigned int page_index)
 
 /* Allocate a new translation block. Flush the translation buffer if
    too many translation blocks or too much generated code. */
+/* 分配一个新的translation block */
 TranslationBlock *tb_alloc(unsigned long pc)
 {
     TranslationBlock *tb;
@@ -472,6 +487,7 @@ TranslationBlock *tb_alloc(unsigned long pc)
 }
 
 /* link the tb with the other TBs */
+/* 将翻译后的代码块放入链表 */
 void tb_link(TranslationBlock *tb)
 {
     unsigned int page_index1, page_index2;
@@ -771,7 +787,7 @@ void tlb_flush_page(CPUState *env, uint32_t addr)
 {
 #if defined(TARGET_I386)
     int i;
-
+    /* i为索引, 将线性地址addr对应的tlb表项清空 */
     i = (addr >> TARGET_PAGE_BITS) & (CPU_TLB_SIZE - 1);
     env->tlb_read[0][i].address = -1;
     env->tlb_write[0][i].address = -1;
@@ -780,13 +796,14 @@ void tlb_flush_page(CPUState *env, uint32_t addr)
 #endif
 }
 
+/* 根据物理地址查找物理页 */
 static inline unsigned long *physpage_find_alloc(unsigned int page)
 {
     unsigned long **lp, *p;
     unsigned int index, i;
 
     index = page >> TARGET_PAGE_BITS;
-    lp = &l1_physmap[index >> L2_BITS];
+    lp = &l1_physmap[index >> L2_BITS]; /* 尝试寻找二级映射表 */
     p = *lp;
     if (!p) {
         /* allocate if not found */
@@ -803,18 +820,22 @@ unsigned long physpage_find(unsigned long page)
 {
     unsigned long *p;
     unsigned int index;
-    index = page >> TARGET_PAGE_BITS;
+    index = page >> TARGET_PAGE_BITS; /* 计算页的索引 */
+    /* L2_BITS为10, L1_BITS为10,也就是存在两级页表 */
     p = l1_physmap[index >> L2_BITS];
     if (!p)
         return IO_MEM_UNASSIGNED;
-    return p[index & (L2_SIZE - 1)];
+    return p[index & (L2_SIZE - 1)]; /* 返回物理页的起始地址 */
 }
 
 /* register physical memory. 'size' must be a multiple of the target
    page size. If (phys_offset & ~TARGET_PAGE_MASK) != 0, then it is an
    io memory page */
-/* 注册物理内存, size应该为target设备page大小的倍数,如果(phys_offset & ~TARGET_PAGE_MASK) != 0
+/* 在cpu上注册物理内存, size应该为target设备page大小的倍数,如果(phys_offset & ~TARGET_PAGE_MASK) != 0
  * 那么它是一个io内存页
+ * @param start_addr 起始物理地址
+ * @param size 物理地址的大小
+ * @param phys_offset 物理偏移
  */
 void cpu_register_physical_memory(unsigned long start_addr, unsigned long size,
                                   long phys_offset)
@@ -823,9 +844,12 @@ void cpu_register_physical_memory(unsigned long start_addr, unsigned long size,
     unsigned long *p;
 
     end_addr = start_addr + size;
-    for(addr = start_addr; addr < end_addr; addr += TARGET_PAGE_SIZE) {
+    for (addr = start_addr; addr < end_addr; addr += TARGET_PAGE_SIZE) {
         p = physpage_find_alloc(addr);
-        *p = phys_offset; /* 记录下物理偏移 */
+        /* 记录下物理偏移,为什么要记录这个东西呢?而且从start_addr开始size大小内存块中,所有page的页表向记录的值都是pyhs_offset?
+         * 注意io内存和非io内存的区别
+         */
+        *p = phys_offset; 
         if ((phys_offset & ~TARGET_PAGE_MASK) == 0) /* 如果页面为非io内存页 */
             phys_offset += TARGET_PAGE_SIZE;
     }

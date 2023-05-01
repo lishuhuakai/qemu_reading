@@ -282,7 +282,9 @@ static int memory_rw(uint8_t *buf, uint32_t addr, int len, int is_write)
     return 0;
 }
 
-/* port = 0 means default port */
+/* port = 0 means default port
+ * @param port 端口
+ */
 int cpu_gdbstub(void *opaque, int (*main_loop)(void *opaque), int port)
 {
     CPUState *env;

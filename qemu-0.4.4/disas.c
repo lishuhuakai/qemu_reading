@@ -165,6 +165,7 @@ void disas(FILE *out, void *code, unsigned long size, int is_host, int flags)
 }
 
 /* Look up symbol for debugging purpose.  Returns "" if unknown. */
+/* 符号查找 */
 const char *lookup_symbol(void *orig_addr)
 {
     unsigned int i;

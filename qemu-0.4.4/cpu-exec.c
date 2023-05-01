@@ -78,6 +78,7 @@ int cpu_exec(CPUState *env1)
     unsigned int flags;
 
     /* first we save global registers */
+    /* 首先保存全局寄存器 */
     saved_T0 = T0;
     saved_T1 = T1;
     saved_T2 = T2;
@@ -139,12 +140,14 @@ int cpu_exec(CPUState *env1)
 #else
 #error unsupported target CPU
 #endif
-    env->exception_index = -1;
+    env->exception_index = -1; /* 清除中断请求 */
 
     /* prepare setjmp context for exception handling */
     for(;;) {
-        if (setjmp(env->jmp_env) == 0) {
+        /* 准备setjmp上下文,为异常处理做准备 */
+        if (setjmp(env->jmp_env) == 0) { /* setjmp和longjmp配对使用 */
             /* if an exception is pending, we execute it here */
+            /* 如果有异常待处理,那么在这里处理 */
             if (env->exception_index >= 0) {
                 if (env->exception_index >= EXCP_INTERRUPT) {
                     /* exit request from the cpu execution loop */
@@ -167,6 +170,7 @@ int cpu_exec(CPUState *env1)
                     /* simulate a real cpu exception. On i386, it can
                        trigger new exceptions, but we do not handle
                        double or triple faults yet. */
+                    /* 模拟一个真实的cpu异常,在i386上,它可以触发一个真实的异常 */
                     do_interrupt(env->exception_index, 
                                  env->exception_is_int, 
                                  env->error_code, 
@@ -185,11 +189,11 @@ int cpu_exec(CPUState *env1)
                 if (__builtin_expect(interrupt_request, 0)) {
 #if defined(TARGET_I386)
                     /* if hardware interrupt pending, we execute it */
-                    if ((interrupt_request & CPU_INTERRUPT_HARD) &&
-                        (env->eflags & IF_MASK) && 
+                    if ((interrupt_request & CPU_INTERRUPT_HARD) && /* 存在硬中断 */
+                        (env->eflags & IF_MASK) && /* 中断没有被屏蔽 */
                         !(env->hflags & HF_INHIBIT_IRQ_MASK)) {
                         int intno;
-                        intno = cpu_x86_get_pic_interrupt(env);
+                        intno = cpu_x86_get_pic_interrupt(env); /* 获取中断号 */
                         if (loglevel) {
                             fprintf(logfile, "Servicing hardware INT=0x%02x\n", intno);
                         }
@@ -204,7 +208,7 @@ int cpu_exec(CPUState *env1)
 #endif
                     }
 #endif
-                    if (interrupt_request & CPU_INTERRUPT_EXIT) {
+                    if (interrupt_request & CPU_INTERRUPT_EXIT) { /* cpu停止? */
                         env->interrupt_request &= ~CPU_INTERRUPT_EXIT;
                         env->exception_index = EXCP_INTERRUPT;
                         cpu_loop_exit();
@@ -237,11 +241,12 @@ int cpu_exec(CPUState *env1)
                 /* we record a subset of the CPU state. It will
                    always be the same before a given translated block
                    is executed. */
+                /* 我们记录CPU状态的一个子集, */
 #if defined(TARGET_I386)
                 flags = env->hflags;
                 flags |= (env->eflags & (IOPL_MASK | TF_MASK | VM_MASK));
                 cs_base = env->segs[R_CS].base;
-                pc = cs_base + env->eip;
+                pc = cs_base + env->eip; /* 计算下一条指令的地址 */
 #elif defined(TARGET_ARM)
                 flags = 0;
                 cs_base = 0;
@@ -249,6 +254,7 @@ int cpu_exec(CPUState *env1)
 #else
 #error unsupported CPU
 #endif
+                /* 查找翻译块,肯定不是一条指令就生成一个翻译块 */
                 tb = tb_find(&ptb, (unsigned long)pc, (unsigned long)cs_base, 
                              flags);
                 if (!tb) {
@@ -267,7 +273,8 @@ int cpu_exec(CPUState *env1)
                     tc_ptr = code_gen_ptr;
                     tb->tc_ptr = tc_ptr;
                     tb->cs_base = (unsigned long)cs_base;
-                    tb->flags = flags;
+                    tb->flags = flags; /* 记录下标志 */
+                    /* 中间代码生成,最多生成65536条代码 */
                     cpu_gen_code(env, tb, CODE_GEN_MAX_SIZE, &code_gen_size);
                     *ptb = tb;
                     tb->hash_next = NULL;
@@ -309,11 +316,13 @@ int cpu_exec(CPUState *env1)
                               : "r" (gen_func)
                               : "r1", "r2", "r3", "r8", "r9", "r10", "r12", "r14");
 #else
-                gen_func();
+                gen_func(); /* 执行完1条指令 */
+                /* 这里有一个问题,那就是模拟的cpu每执行完1条指令,是如何更改ip寄存器中的值的? */
 #endif
                 env->current_tb = NULL;
                 /* reset soft MMU for next block (it can currently
                    only be set by a memory fault) */
+                /* 为下一个翻译块重置soft MMU */
 #if defined(TARGET_I386) && !defined(CONFIG_SOFTMMU)
                 if (env->hflags & HF_SOFTMMU_MASK) {
                     env->hflags &= ~HF_SOFTMMU_MASK;
@@ -329,6 +338,7 @@ int cpu_exec(CPUState *env1)
 
 #if defined(TARGET_I386)
     /* restore flags in standard format */
+    /* 还原标准的标志 */
     env->eflags = env->eflags | cc_table[CC_OP].compute_all() | (DF & DF_MASK);
 
     /* restore global registers */

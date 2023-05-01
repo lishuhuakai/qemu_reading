@@ -116,6 +116,7 @@ extern int loglevel;
 #include "exec.h"
 
 typedef struct CCTable {
+    /* 计算所有的标记 */
     int (*compute_all)(void); /* return all the flags */
     int (*compute_c)(void);  /* return the C flag */
 } CCTable;
