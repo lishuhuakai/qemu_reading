@@ -16,6 +16,7 @@
 #define CC_Z	0x0040 /* 零标志位,它记录相关指令执行之后,其结果是否为0 */
 #define CC_S    0x0080 /* 符号标志位,它记录相关指令执行之后,其结果是否为负,如果为负,那么sf=1 */
 #define CC_O    0x0800 /* 溢出标志位 */
+#define DIRECTION_FLAG 0x0400 /* 方向标志 */
 
 #define __init_call	__attribute__ ((unused,__section__ (".initcall.init")))
 

@@ -1723,6 +1723,7 @@ static void gen_eob(DisasContext *s)
 
 /* generate a jump to eip. No segment change must happen before as a
    direct call to the next block may occur */
+/* 跳转到eip指向的指令 */
 static void gen_jmp(DisasContext *s, unsigned int eip)
 {
     TranslationBlock *tb = s->tb;
@@ -1740,6 +1741,7 @@ static void gen_jmp(DisasContext *s, unsigned int eip)
 
 /* convert one instruction. s->is_jmp is set if the translation must
    be stopped. Return the next pc value */
+/* 返回下一条指令的地址 */
 static uint8_t *disas_insn(DisasContext *s, uint8_t *pc_start)
 {
     int b, prefixes, aflag, dflag;
@@ -1753,7 +1755,7 @@ static uint8_t *disas_insn(DisasContext *s, uint8_t *pc_start)
     dflag = s->code32;
     s->override = -1;
  next_byte:
-    b = ldub(s->pc);
+     b = ldub(s->pc); /* 加载指令 */
     s->pc++;
     /* check prefixes */
     switch (b) {
@@ -4343,6 +4345,7 @@ static void optimize_flags(uint16_t *opc_buf, int opc_buf_len)
 /* generate intermediate code in gen_opc_buf and gen_opparam_buf for
    basic block 'tb'. If search_pc is TRUE, also generate PC
    information for each intermediate instruction. */
+/* 产生中间代码 */
 static inline int gen_intermediate_code_internal(CPUState *env,
                                                  TranslationBlock *tb, 
                                                  int search_pc)
@@ -4355,7 +4358,7 @@ static inline int gen_intermediate_code_internal(CPUState *env,
     uint8_t *cs_base;
     
     /* generate intermediate code */
-    pc_start = (uint8_t *)tb->pc;
+    pc_start = (uint8_t *)tb->pc; /* 开始翻译的指令 */
     cs_base = (uint8_t *)tb->cs_base;
     flags = tb->flags;
        

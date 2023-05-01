@@ -266,7 +266,7 @@ extern unsigned long host_page_mask;
 #define PAGE_WRITE     0x0002
 #define PAGE_EXEC      0x0004
 #define PAGE_BITS      (PAGE_READ | PAGE_WRITE | PAGE_EXEC)
-#define PAGE_VALID     0x0008
+#define PAGE_VALID     0x0008 /* 映射成功 */
 /* original state of the write flag (used when tracking self-modifying
    code */
 #define PAGE_WRITE_ORG 0x0010 

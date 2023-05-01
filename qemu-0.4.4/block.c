@@ -47,17 +47,19 @@
 
 struct BlockDriverState {
     int fd; /* if -1, only COW mappings */
-    int64_t total_sectors;
-    int read_only;
+    int64_t total_sectors; /* 块的个数，每512个字节为1块 */
+    int read_only; /* 是否只读 */
 
     uint8_t *cow_bitmap; /* if non NULL, COW mappings are used first */
     uint8_t *cow_bitmap_addr; /* mmap address of cow_bitmap */
     int cow_bitmap_size;
     int cow_fd;
     int64_t cow_sectors_offset;
-    char filename[1024];
+    char filename[1024]; /* 文件名称 */
 };
-
+/* 块设备驱动
+ * @param 
+ */
 BlockDriverState *bdrv_open(const char *filename, int snapshot)
 {
     BlockDriverState *bs;
@@ -138,16 +140,17 @@ BlockDriverState *bdrv_open(const char *filename, int snapshot)
         bs->fd = fd;
     }
 
-    if (snapshot) {
+    if (snapshot) { /* 快照 */
         /* create a temporary COW file */
         cow_fd = mkstemp(template);
         if (cow_fd < 0)
             goto fail;
         bs->cow_fd = cow_fd;
-	unlink(template);
+        unlink(template);
         
         /* just need to allocate bitmap */
         bs->cow_bitmap_size = (bs->total_sectors + 7) >> 3;
+        /* 在内存之中实现映射 */
         bs->cow_bitmap_addr = mmap(get_mmap_addr(bs->cow_bitmap_size), 
                                    bs->cow_bitmap_size, 
                                    PROT_READ | PROT_WRITE,

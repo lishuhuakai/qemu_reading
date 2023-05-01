@@ -94,13 +94,15 @@ void tlb_flush(CPUState *env);
 #if defined(__powerpc__)
 #define USE_DIRECT_JUMP
 #endif
-
+/* 转换块 */
 typedef struct TranslationBlock {
     unsigned long pc;   /* simulated PC corresponding to this block (EIP + CS base) */
+    /* CS段的基址 */
     unsigned long cs_base; /* CS base for this block */
     unsigned int flags; /* flags defining in which context the code was generated */
     uint16_t size;      /* size of target code for this block (1 <=
                            size <= TARGET_PAGE_SIZE) */
+    /* 指向翻译过后的代码块 */
     uint8_t *tc_ptr;    /* pointer to the translated code */
     struct TranslationBlock *hash_next; /* next matching block */
     struct TranslationBlock *page_next[2]; /* next blocks in even/odd page */
@@ -136,6 +138,11 @@ extern uint8_t *code_gen_ptr;
 
 /* find a translation block in the translation cache. If not found,
    return NULL and the pointer to the last element of the list in pptb */
+/* 在翻译块缓存查找一个翻译块,如果没有找到,返回NULL,pptb指针指向链表的最后一个元素
+ * @param pc 下一条指令的地址
+ * @param cs_base cs段寄存器的值,这个值是为了兼容x86, arm处理器其实并不需要这个东西
+ * @param flags 标志信息
+ */
 static inline TranslationBlock *tb_find(TranslationBlock ***pptb,
                                         unsigned long pc, 
                                         unsigned long cs_base,

@@ -547,19 +547,24 @@ void cmos_init(void)
 
 /***********************************************************/
 /* 8259 pic emulation */
-
+/* QEMU只是实现了8259 pic的部分功能 */
+/* Programmable Interrupt Controller -- 可编程中断控制器 */
 typedef struct PicState {
     uint8_t last_irr; /* edge detection */
+    /* 用于存放等待进一步处理的中断 */
     uint8_t irr; /* interrupt request register */
+    /* imr用于过滤被屏蔽的中断 */
     uint8_t imr; /* interrupt mask register */
+    /* isr用于记录正在被处理的中断 */
     uint8_t isr; /* interrupt service register */
     uint8_t priority_add; /* used to compute irq priority */
-    uint8_t irq_base;
-    uint8_t read_reg_select;
+    uint8_t irq_base; /* 起始中断号 */
+    uint8_t read_reg_select; /* read_reg_select为1,选择ISR寄存器,否则选择IRR寄存器,这两个寄存器能够读取,前提是RR为1 */
     uint8_t special_mask;
-    uint8_t init_state;
+    uint8_t init_state; /* 当前正在设置的ICW寄存器 */
     uint8_t auto_eoi;
     uint8_t rotate_on_autoeoi;
+    /* init4表示是否需要设置ICW4 */
     uint8_t init4; /* true if 4 byte init */
 } PicState;
 
@@ -627,7 +632,7 @@ static void pic_update_irq(void)
     if (irq2 >= 0) {
         /* if irq request by slave pic, signal master PIC */
         /* 这里是模拟边缘触发吗? */
-        pic_set_irq1(&pics[0], 2, 1);
+        pic_set_irq1(&pics[0], 2, 1); /* 注意这里,从主设备的2号中断触发 */
         pic_set_irq1(&pics[0], 2, 0);
     }
     /* look at requested irq */
@@ -652,7 +657,10 @@ int64_t cpu_get_ticks(void);
 #if defined(DEBUG_PIC)
 int irq_level[16];
 #endif
-
+/* 中断触发接口
+ * @param irq 中断号
+ * @param level
+ */
 void pic_set_irq(int irq, int level)
 {
 #if defined(DEBUG_PIC)
@@ -668,7 +676,7 @@ void pic_set_irq(int irq, int level)
 #endif
     /* 记录下发生的中断 */
     pic_set_irq1(&pics[irq >> 3], irq & 7, level);
-    pic_update_irq(); /* 通知cpu */
+    pic_update_irq(); /* 通知cpu进行中断处理 */
 }
 
 int cpu_x86_get_pic_interrupt(CPUX86State *env)
@@ -699,7 +707,8 @@ int cpu_x86_get_pic_interrupt(CPUX86State *env)
     pics[0].irr &= ~(1 << irq);
     return intno;
 }
-/* pic写寄存器 */
+
+/* 往pic的寄存器之中写值 */
 void pic_ioport_write(CPUX86State *env, uint32_t addr, uint32_t val)
 {
     PicState *s;
@@ -711,24 +720,30 @@ void pic_ioport_write(CPUX86State *env, uint32_t addr, uint32_t val)
     s = &pics[addr >> 7]; /* bit8用于选择主从 */
     addr &= 1;
     if (addr == 0) {
-        if (val & 0x10) { /* bit5为init */
-            /* init */
+        if (val & 0x10) { /* ICW1的第4位总是1,这是ICS1的标记 */
+            /* init */ /* ICW1 */
             memset(s, 0, sizeof(PicState));
-            s->init_state = 1;
-            s->init4 = val & 1;
-            if (val & 0x02)
+            s->init_state = 1; /* ICW1?? */
+            s->init4 = val & 1; /* ic4为1表示需要在后面写入ICW4,否则不需要 */
+            if (val & 0x02) /* 单片模式不支持 */
                 hw_error("single mode not supported");
-            if (val & 0x08)
+            if (val & 0x08) /* LTIM -- 当前只支持边缘触发 */
                 hw_error("level sensitive irq not supported");
-        } else if (val & 0x08) { /* bit3 */
-            if (val & 0x02)
+        } else if (val & 0x08) { /* OCW3 -- 用于设定特殊屏蔽方式以及查询方式 */
+            if (val & 0x02) /* bit2 -- Read Register读取寄存器,和bit1一起使用 */
+                /* read_reg_select为1,选择ISR寄存器,否则选择IRR寄存器 */
                 s->read_reg_select = val & 1; /* 读寄存器是否被选中 */
-            if (val & 0x40)
+            if (val & 0x40) /* bit6 -- ESMM (Enable Special Mask Mode)特殊屏蔽模式允许位 */
+                /* 和bit5 SMM一起使用,用来启用或者禁用特殊模式屏蔽模式 */
                 s->special_mask = (val >> 5) & 1;
-        } else {
+        } else { /* OCW2 */
             switch(val) {
             case 0x00:
             case 0x80:
+                /* rotate_on_autoeoi用于记录OCW2的bit7也就是R位,用于设置优先级控制方式
+                 * rotate_on_autoeoi为0,表示固定优先级方式,接口号越低,优先级越高
+                 * rotate_on_autoeoi为1,表示用循环优先级方式.
+                 */
                 s->rotate_on_autoeoi = val >> 7;
                 break;
             case 0x20: /* end of interrupt */
@@ -760,23 +775,26 @@ void pic_ioport_write(CPUX86State *env, uint32_t addr, uint32_t val)
         }
     } else {
         switch(s->init_state) {
-        case 0:
+        case 0: /* OCW1 -- 用来屏蔽连接在8265A上的外部设备的中断信号 */
             /* normal mode */
-            s->imr = val;
+            s->imr = val; /* 设置屏蔽码 */
             pic_update_irq();
             break;
         case 1:
-            s->irq_base = val & 0xf8;
-            s->init_state = 2;
+            s->irq_base = val & 0xf8; /* 设置起始中断号 */
+            s->init_state = 2; /* 下一步要设置ICW3 */
             break;
-        case 2:
+        case 2: /* ICW3仅在级联的方式下才需要,用于设置主片和从片用哪一个IRQ接口互连,
+                 * 当然QEMU这里已经限定死了,从片连接主片的IRQ2
+                 * 所以忽略了 */
             if (s->init4) {
-                s->init_state = 3;
+                s->init_state = 3; /* ICW3设置完了之后,立马设置ICW4 */
             } else {
                 s->init_state = 0;
             }
             break;
         case 3:
+            /* AEOI -- 自动结束中断 */
             s->auto_eoi = (val >> 1) & 1;
             s->init_state = 0;
             break;
@@ -784,6 +802,7 @@ void pic_ioport_write(CPUX86State *env, uint32_t addr, uint32_t val)
     }
 }
 
+/* 读取 */
 uint32_t pic_ioport_read(CPUX86State *env, uint32_t addr1)
 {
     PicState *s;
@@ -799,7 +818,7 @@ uint32_t pic_ioport_read(CPUX86State *env, uint32_t addr1)
         else
             ret = s->irr; /* 中断请求寄存器 */
     } else {
-        ret = s->imr;
+        ret = s->imr; /* 中断屏蔽寄存器 */
     }
 #ifdef DEBUG_PIC
     printf("pic_read: addr=0x%02x val=0x%02x\n", addr1, ret);
@@ -809,6 +828,9 @@ uint32_t pic_ioport_read(CPUX86State *env, uint32_t addr1)
 /* pic初始化 */
 void pic_init(void)
 {
+    /* Master 8259a的端口地址为0x20, 0x21
+     * Slave 8259a的端口地址为0xa0, 0xa1
+     */
     register_ioport_write(0x20, 2, pic_ioport_write, 1);
     register_ioport_read(0x20, 2, pic_ioport_read, 1);
     register_ioport_write(0xa0, 2, pic_ioport_write, 1);
@@ -1139,26 +1161,72 @@ void pit_init(void)
 
 #define UART_IIR_MSI	0x00	/* Modem status interrupt */
 #define UART_IIR_THRI	0x02	/* Transmitter holding register empty */
+/* 接收数据中断 */
 #define UART_IIR_RDI	0x04	/* Receiver data interrupt */
 #define UART_IIR_RLSI	0x06	/* Receiver line status interrupt */
 
-#define UART_LSR_TEMT	0x40	/* Transmitter empty */
+#define UART_LSR_TEMT	0x40	/* THR为空,线处于空闲状态--Transmitter empty */
 #define UART_LSR_THRE	0x20	/* Transmit-hold-register empty */
-#define UART_LSR_BI	0x10	/* Break interrupt indicator */
-#define UART_LSR_FE	0x08	/* Frame error indicator */
-#define UART_LSR_PE	0x04	/* Parity error indicator */
+#define UART_LSR_BI	0x10	/* 接收到了break信号--Break interrupt indicator */
+#define UART_LSR_FE	0x08	/* 帧错误(未使用)--Frame error indicator */
+#define UART_LSR_PE	0x04	/* 校验错误(未使用)--Parity error indicator */
 #define UART_LSR_OE	0x02	/* Overrun error indicator */
+/* 已经存在数据可以被接收--Data available */
 #define UART_LSR_DR	0x01	/* Receiver data ready */
+
+/* THR--发送器保持寄存器,用于缓冲输出字符. 如果不使用FIFO缓冲,则只能存储一个字符.否则字符的数量
+ * 取决于UART的类型. LSR(线路状态寄存器)中的bit 5,可用于检查是否必须将新信息写入 THR. 
+ * 值1表示寄存器为空. 如果使用FIFO缓冲, 则当该bit发出空状态信号时,可以将一个以上的字符写入
+ * 发送器保持寄存器. 没有指示当前存在于发送器 FIFO 中的字节数.
+* THR(发送器保持寄存器)不用于直接传输数据. 字节首先被传送到移位寄存器,在那里信息被分解成单个bit,
+* 一个位一个位地发送.
+*/
 
 typedef struct SerialState {
     uint8_t divider;
+    /* 接收缓存寄存器,如果没有FIFO缓存被使用的,rbr记录了接收到的数据的字节数,如果有FIFO的话,
+     * 那就是还未被读取的字节数. 如果使用 FIFO 缓冲, 则寄存器的每个新读取操作都将返回下一个字节,
+     * 直到不再有字节为止. LSR(线路状态寄存器)中的bit 0可用于检查是否已读取所有接收到的字节.
+     * 如果没有更多数据可读,该bit将变为零.
+     */
     uint8_t rbr; /* receive register */
+    /* 在PC上执行串行通信的最聪明的方法是使用中断驱动例程. 在该配置中,无需定期轮询UART的寄存器
+     * 以了解状态变化. UART将通过生成处理器中断来指示每次更改.必须存在一个软件例程来处理中断
+     * 并检查导致中断的状态变化.
+     * UART不会生成中断,除非 UART 被告知这样做. 这是通过设置IER(中断使能寄存器)中的位来完成的.
+     * bit值为 1 表示可能发生中断.
+     */
     uint8_t ier;
+    /* 当通信设备的状态发生变化时, UART能够产生处理器中断. 一个中断信号用于引起注意.
+     * 这意味着,在执行必要的操作之前,软件需要额外的信息. IIR(中断标识寄存器)在这种情况下很有帮助.
+     * 它的位显示 UART 的当前状态以及导致中断发生的状态变化.
+     */
     uint8_t iir; /* read only */
+    /* line control register 线控寄存器,主要用于配置stop bit的位数
+     * LCR(线路控制寄存器)在初始化时用于设置通信参数. 例如,可以更改奇偶校验和数据位数.
+     * 该寄存器还控制DLL和DLM寄存器的可访问性. 这些寄存器映射到与RBR,THR和IER寄存器相同的I/O端口.
+     * 因为它们仅在没有通信发生时的初始化时被访问,所以此寄存器交换对性能没有影响。
+     */
     uint8_t lcr;
+    /* MCR(调制解调器控制寄存器)用于与附加设备执行握手操作.在包括16550在内的原始UART系列中,
+     * 控制信号的设置和复位必须通过软件来完成. 新的16750能够自动处理流量控制,从而减少处理器的负载.
+     */
     uint8_t mcr;
+    /* line status register 状态寄存器 
+     * LSR(线路状态寄存器)显示当前通信状态.错误反映在该寄存器中.接收和发送缓冲区的状态也是可用的.
+     * bit 5和bit 6 均表示发送周期的状态. 不同之处在于,一旦发送器保持寄存器为空,bit 5变为高电平,
+     * bit 6表示输出线上位的移位寄存器也为空.
+     */
     uint8_t lsr; /* read only */
+    /* MSR(调制解调器状态寄存器)包含有关设备上四个输入调制解调器控制线的信息.信息分为两个半字节.
+     * 四个最高有效位包含有关输入当前状态的信息,其中最低有效位用于指示状态变化. 每次读取寄存器时,
+     * 四个LSB都会被重置.
+     */
     uint8_t msr;
+    /* SCR(暂存寄存器) 在8250和8250B UART上不存在.它可以用来存储一个字节的信息.实际上,
+     * 它的用途有限. 我所知道的唯一实际用途是检查UART是8250/8250B还是8250A/16450系列.
+     * 因为8250系列仅在XT中找到,所以这种寄存器的使用不再常见.
+     */
     uint8_t scr;
 } SerialState;
 
@@ -1176,12 +1244,13 @@ void serial_update_irq(void)
         s->iir = UART_IIR_NO_INT;
     }
     if (s->iir != UART_IIR_NO_INT) {
-        pic_set_irq(UART_IRQ, 1);
+        pic_set_irq(UART_IRQ, 1); /* 触发串口中断 */
     } else {
         pic_set_irq(UART_IRQ, 0);
     }
 }
 
+/* 关于这里,可以参考UART register to port conversion table */
 void serial_ioport_write(CPUX86State *env, uint32_t addr, uint32_t val)
 {
     SerialState *s = &serial_ports[0];
@@ -1192,48 +1261,50 @@ void serial_ioport_write(CPUX86State *env, uint32_t addr, uint32_t val)
     switch(addr) {
     default:
     case 0:
-        if (s->lcr & UART_LCR_DLAB) {
+        /* DLAB被置位,则表示DLL以及DLM可以被访问 */
+        if (s->lcr & UART_LCR_DLAB) { /* 设置divider的低8bit */
             s->divider = (s->divider & 0xff00) | val;
-        } else {
+        } else { /* THRE位置0,表示有数据要发送 */
             s->lsr &= ~UART_LSR_THRE;
             serial_update_irq();
 
             ch = val;
             do {
-                ret = write(1, &ch, 1);
+                ret = write(1, &ch, 1); /* 直接向stdout输出数据 */
             } while (ret != 1);
-            s->lsr |= UART_LSR_THRE;
-            s->lsr |= UART_LSR_TEMT;
+            /* 写入完成之后,更新状态,告知外部THR为空,串口处于空闲状态 */
+            s->lsr |= UART_LSR_THRE; /* THR is empty, and line is idle */
+            s->lsr |= UART_LSR_TEMT; /* Errornous data in fifo */
             serial_update_irq();
         }
         break;
     case 1:
-        if (s->lcr & UART_LCR_DLAB) {
+        if (s->lcr & UART_LCR_DLAB) { /* 设置divider的高8bit */
             s->divider = (s->divider & 0x00ff) | (val << 8);
         } else {
-            s->ier = val;
+            s->ier = val; /* 设置ier寄存器 */
             serial_update_irq();
         }
         break;
-    case 2:
+    case 2: /* FIFO功能不支持 */
         break;
-    case 3:
-        s->lcr = val;
+    case 3: /* 设置lcr寄存器 */
+        s->lcr = val; 
         break;
-    case 4:
+    case 4: /* 设置mcr寄存器 */
         s->mcr = val;
         break;
-    case 5:
+    case 5: /* factory test */
         break;
     case 6:
         s->msr = val;
         break;
-    case 7:
+    case 7: /* 设置scr寄存器 */
         s->scr = val;
         break;
     }
 }
-
+/* 读取串口寄存器中的数据 */
 uint32_t serial_ioport_read(CPUX86State *env, uint32_t addr)
 {
     SerialState *s = &serial_ports[0];
@@ -1244,17 +1315,17 @@ uint32_t serial_ioport_read(CPUX86State *env, uint32_t addr)
     default:
     case 0:
         if (s->lcr & UART_LCR_DLAB) {
-            ret = s->divider & 0xff; 
+            ret = s->divider & 0xff; /* 读取divider的低8bit */
         } else {
-            ret = s->rbr;
+            ret = s->rbr; /* 读取串口接收到的数据 */
             s->lsr &= ~(UART_LSR_DR | UART_LSR_BI);
             serial_update_irq();
         }
         break;
     case 1:
-        if (s->lcr & UART_LCR_DLAB) {
+        if (s->lcr & UART_LCR_DLAB) { /* 读取divider的高8bit */
             ret = (s->divider >> 8) & 0xff;
-        } else {
+        } else { /* 读取ier寄存器的值 */
             ret = s->ier;
         }
         break;
@@ -1288,13 +1359,15 @@ void term_print_help(void)
     printf("\n"
            "C-a h    print this help\n"
            "C-a x    exit emulatior\n"
-	   "C-a s    save disk data back to file (if -snapshot)\n"
+	       "C-a s    save disk data back to file (if -snapshot)\n"
            "C-a b    send break (magic sysrq)\n"
            "C-a C-a  send C-a\n"
            );
 }
 
-/* called when a char is received */
+/* called when a char is received 
+ * 当串口接收到了一个字符,就会调用此函数
+ */
 void serial_received_byte(SerialState *s, int ch)
 {
     if (term_got_escape) {
@@ -1306,7 +1379,7 @@ void serial_received_byte(SerialState *s, int ch)
         case 'x':
             exit(0);
             break;
-	case 's': 
+	    case 's': 
             {
                 int i;
                 for (i = 0; i < MAX_DISKS; i++) {
@@ -1318,6 +1391,7 @@ void serial_received_byte(SerialState *s, int ch)
         case 'b':
             /* send break */
             s->rbr = 0;
+            /* 接收到了break信号(BI),而且有数据到达(DR) */
             s->lsr |= UART_LSR_BI | UART_LSR_DR;
             serial_update_irq();
             break;
@@ -1326,10 +1400,10 @@ void serial_received_byte(SerialState *s, int ch)
         }
     } else if (ch == TERM_ESCAPE) {
         term_got_escape = 1;
-    } else {
+    } else { /* 发送中断 */
     send_char:
-        s->rbr = ch;
-        s->lsr |= UART_LSR_DR;
+        s->rbr = ch; /* rbr用于记录接收到的一个字符 */
+        s->lsr |= UART_LSR_DR; /* 已经有数据准备好了 */
         serial_update_irq();
     }
 }
@@ -1339,7 +1413,7 @@ void serial_init(void)
 {
     SerialState *s = &serial_ports[0];
 
-    s->lsr = UART_LSR_TEMT | UART_LSR_THRE;
+    s->lsr = UART_LSR_TEMT | UART_LSR_THRE; /* 设置初始状态 */
 
     register_ioport_write(0x3f8, 8, serial_ioport_write, 1);
     register_ioport_read(0x3f8, 8, serial_ioport_read, 1);
@@ -1446,7 +1520,7 @@ typedef struct NE2000State {
     uint8_t phys[6]; /* mac address */
     uint8_t curpag;
     uint8_t mult[8]; /* multicast mask array */
-    uint8_t mem[NE2000_MEM_SIZE];
+    uint8_t mem[NE2000_MEM_SIZE]; /* 网卡缓存 */
 } NE2000State;
 
 NE2000State ne2000_state;
@@ -1524,7 +1598,7 @@ int net_init(void)
     }
     return 0;
 }
-
+/* 网卡发包 */
 void net_send_packet(NE2000State *s, const uint8_t *buf, int size)
 {
 #ifdef DEBUG_NE2000
@@ -1550,7 +1624,7 @@ int ne2000_can_receive(NE2000State *s)
         return 0;
     return 1;
 }
-
+/* 网卡收包 */
 void ne2000_receive(NE2000State *s, uint8_t *buf, int size)
 {
     uint8_t *p;
@@ -1560,24 +1634,25 @@ void ne2000_receive(NE2000State *s, uint8_t *buf, int size)
     printf("NE2000: received len=%d\n", size);
 #endif
 
-    index = s->curpag << 8;
+    index = s->curpag << 8; /* 下一个可用的位置 */
     /* 4 bytes for header */
-    total_len = size + 4;
+    total_len = size + 4; /* 增加4字节的头部 */
     /* address for next packet (4 bytes for CRC) */
-    next = index + ((total_len + 4 + 255) & ~0xff);
+    next = index + ((total_len + 4 + 255) & ~0xff); /* 下一个可用的位置 */
     if (next >= s->stop)
-        next -= (s->stop - s->start);
+        next -= (s->stop - s->start); /* 环形缓冲区 */
     /* prepare packet header */
     p = s->mem + index;
     p[0] = ENRSR_RXOK; /* receive status */
-    p[1] = next >> 8;
+    p[1] = next >> 8; /* 下一个可用的位置 */
+    /* total_len为4字节, p[2-3]只记录了最低的两个字节 */
     p[2] = total_len;
     p[3] = total_len >> 8;
     index += 4;
 
     /* write packet data */
     while (size > 0) {
-        avail = s->stop - index;
+        avail = s->stop - index; /* 剩余可用的缓存空间 */
         len = size;
         if (len > avail)
             len = avail;
@@ -1595,6 +1670,7 @@ void ne2000_receive(NE2000State *s, uint8_t *buf, int size)
     ne2000_update_irq(s);
 }
 
+/* 设置ne2000的寄存器 */
 void ne2000_ioport_write(CPUX86State *env, uint32_t addr, uint32_t val)
 {
     NE2000State *s = &ne2000_state;
@@ -1614,7 +1690,7 @@ void ne2000_ioport_write(CPUX86State *env, uint32_t addr, uint32_t val)
                 s->isr |= ENISR_RDC;
                 ne2000_update_irq(s);
             }
-            if (val & E8390_TRANS) {
+            if (val & E8390_TRANS) { /* 发送一个帧 */
                 net_send_packet(s, s->mem + (s->tpsr << 8), s->tcnt);
                 /* signal end of transfert */
                 s->tsr = ENTSR_PTX;
@@ -1624,7 +1700,7 @@ void ne2000_ioport_write(CPUX86State *env, uint32_t addr, uint32_t val)
         }
     } else {
         page = s->cmd >> 6;
-        offset = addr | (page << 4);
+        offset = addr | (page << 4); /* 偏移 */
         switch(offset) {
         case EN0_STARTPG:
             s->start = val << 8;
@@ -1639,7 +1715,7 @@ void ne2000_ioport_write(CPUX86State *env, uint32_t addr, uint32_t val)
             s->imr = val;
             ne2000_update_irq(s);
             break;
-        case EN0_TPSR:
+        case EN0_TPSR: /* Transmit starting page WR */
             s->tpsr = val;
             break;
         case EN0_TCNTLO:
@@ -1667,13 +1743,13 @@ void ne2000_ioport_write(CPUX86State *env, uint32_t addr, uint32_t val)
             s->isr &= ~val;
             ne2000_update_irq(s);
             break;
-        case EN1_PHYS ... EN1_PHYS + 5:
+        case EN1_PHYS ... EN1_PHYS + 5: /* 这里是在设置mac地址 */
             s->phys[offset - EN1_PHYS] = val;
             break;
         case EN1_CURPAG:
             s->curpag = val;
             break;
-        case EN1_MULT ... EN1_MULT + 7:
+        case EN1_MULT ... EN1_MULT + 7: /* 设置组播 */
             s->mult[offset - EN1_MULT] = val;
             break;
         }
@@ -1794,7 +1870,7 @@ uint32_t ne2000_reset_ioport_read(CPUX86State *env, uint32_t addr)
     ne2000_reset();
     return 0;
 }
-
+/* 网卡初始化 */
 void ne2000_init(void)
 {
     register_ioport_write(NE2000_IOPORT, 16, ne2000_ioport_write, 1);
@@ -1842,7 +1918,7 @@ void ne2000_init(void)
 #define TAG_MASK		0xf8
 
 #define IDE_CMD_RESET           0x04
-#define IDE_CMD_DISABLE_IRQ     0x02
+#define IDE_CMD_DISABLE_IRQ     0x02 /* 禁止中断 */
 
 /* ATA/ATAPI Commands pre T13 Spec */
 #define WIN_NOP				0x00
@@ -1865,7 +1941,9 @@ void ne2000_init(void)
  */
 #define WIN_READ			0x20 /* 28-Bit */
 #define WIN_READ_ONCE			0x21 /* 28-Bit without retries */
+/* READ LONG命令总是仅仅读取1个扇区的数据,重试 */
 #define WIN_READ_LONG			0x22 /* 28-Bit */
+/* 不带重试 */
 #define WIN_READ_LONG_ONCE		0x23 /* 28-Bit without retries */
 #define WIN_READ_EXT			0x24 /* 48-Bit */
 #define WIN_READDMA_EXT			0x25 /* 48-Bit */
@@ -1980,12 +2058,13 @@ typedef void EndTransferFunc(struct IDEState *);
 typedef struct IDEState {
     /* ide config */
     int cylinders, heads, sectors;
-    int64_t nb_sectors;
+    int64_t nb_sectors; /* 扇区的个数 */
     int mult_sectors;
-    int irq;
+    int irq; /* 中断号 */
     /* ide regs */
     uint8_t feature;
     uint8_t error;
+    /* nsector表示要读取的扇区的个数 */
     uint16_t nsector; /* 0 is 256 to ease computations */
     uint8_t sector;
     uint8_t lcyl;
@@ -1996,11 +2075,12 @@ typedef struct IDEState {
     uint8_t cmd;
     /* depends on bit 4 in select, only meaningful for drive 0 */
     struct IDEState *cur_drive; 
-    BlockDriverState *bs;
+    BlockDriverState *bs; /* 块设备 */
+    /* 每读取req_nb_sectors产生一个中断 */
     int req_nb_sectors; /* number of sectors per interrupt */
     EndTransferFunc *end_transfer_func;
-    uint8_t *data_ptr;
-    uint8_t *data_end;
+    uint8_t *data_ptr; /* 要传输的数据开始的位置 */
+    uint8_t *data_end; /* 要传输的数据结束的位置 */
     uint8_t io_buffer[MAX_MULT_SECTORS*512 + 4];
 } IDEState;
 
@@ -2018,7 +2098,7 @@ static void padstr(char *str, const char *src, int len)
         str++;
     }
 }
-
+/* 向驱动提供ide的相关参数,暂时只支持部分功能 */
 static void ide_identify(IDEState *s)
 {
     uint16_t *p;
@@ -2067,7 +2147,7 @@ static inline void ide_abort_command(IDEState *s)
     s->status = READY_STAT | ERR_STAT;
     s->error = ABRT_ERR;
 }
-
+/* 触发中断 */
 static inline void ide_set_irq(IDEState *s)
 {
     if (!(ide_state[0].cmd & IDE_CMD_DISABLE_IRQ)) {
@@ -2076,6 +2156,7 @@ static inline void ide_set_irq(IDEState *s)
 }
 
 /* prepare data transfer and tell what to do after */
+/* 准备好数据传输,然后告诉我们接下来应该干什么事情 */
 static void ide_transfer_start(IDEState *s, int size, 
                                EndTransferFunc *end_transfer_func)
 {
@@ -2085,6 +2166,7 @@ static void ide_transfer_start(IDEState *s, int size,
     s->status |= DRQ_STAT;
 }
 
+/* 停止数据传输 */
 static void ide_transfer_stop(IDEState *s)
 {
     s->end_transfer_func = ide_transfer_stop;
@@ -2105,9 +2187,10 @@ static int64_t ide_get_sector(IDEState *s)
             (s->select & 0x0f) * s->sectors + 
             (s->sector - 1);
     }
-    return sector_num;
+    return sector_num; /* 扇区号 */
 }
 
+/* 设置要读取的扇区 */
 static void ide_set_sector(IDEState *s, int64_t sector_num)
 {
     unsigned int cyl, r;
@@ -2126,14 +2209,15 @@ static void ide_set_sector(IDEState *s, int64_t sector_num)
     }
 }
 
+/* 读取扇区的数据 */
 static void ide_sector_read(IDEState *s)
 {
     int64_t sector_num;
     int ret, n;
 
     s->status = READY_STAT | SEEK_STAT;
-    sector_num = ide_get_sector(s);
-    n = s->nsector;
+    sector_num = ide_get_sector(s); /* 获得第1个扇区号 */
+    n = s->nsector; /* 要读取的扇区的个数 */
     if (n == 0) {
         /* no more sector to read from disk */
         ide_transfer_stop(s);
@@ -2143,14 +2227,16 @@ static void ide_sector_read(IDEState *s)
 #endif
         if (n > s->req_nb_sectors)
             n = s->req_nb_sectors;
+        /* 从块设备中读取数据,放入io_buffer之中 */
         ret = bdrv_read(s->bs, sector_num, s->io_buffer, n);
         ide_transfer_start(s, 512 * n, ide_sector_read);
-        ide_set_irq(s);
-        ide_set_sector(s, sector_num + n);
+        ide_set_irq(s); /* 中断,通知上层读取 */
+        ide_set_sector(s, sector_num + n); /* 设置下一次要读取的位置 */
         s->nsector -= n;
     }
 }
 
+/* 向扇区中写入数据 */
 static void ide_sector_write(IDEState *s)
 {
     int64_t sector_num;
@@ -2166,7 +2252,7 @@ static void ide_sector_write(IDEState *s)
         n = s->req_nb_sectors;
     ret = bdrv_write(s->bs, sector_num, s->io_buffer, n);
     s->nsector -= n;
-    if (s->nsector == 0) {
+    if (s->nsector == 0) { /* 数据已经写完 */
         /* no more sector to write */
         ide_transfer_stop(s);
     } else {
@@ -2184,7 +2270,7 @@ void ide_ioport_write(CPUX86State *env, uint32_t addr, uint32_t val)
     IDEState *s = ide_state[0].cur_drive;
     int unit, n;
 
-    addr &= 7;
+    addr &= 7; /* 这里只取低3bit */
 #ifdef DEBUG_IDE
     printf("IDE: write addr=0x%x val=0x%02x\n", addr, val);
 #endif
@@ -2194,29 +2280,29 @@ void ide_ioport_write(CPUX86State *env, uint32_t addr, uint32_t val)
     case 1:
         s->feature = val;
         break;
-    case 2:
+    case 2: /* 扇区计数寄存器 1f2h,这个寄存器中保存了读写的扇区的数目,其中0表示的扇区数目是256 */
         if (val == 0)
             val = 256;
-        s->nsector = val;
+        s->nsector = val; /* 要操作的扇区的个数 */
         break;
-    case 3:
+    case 3: /* 扇区号寄存器1f3h */
         s->sector = val;
         break;
-    case 4:
+    case 4: /* 柱面号低位寄存器 */
         s->lcyl = val;
         break;
-    case 5:
+    case 5: /* 柱面号高位寄存器 */
         s->hcyl = val;
         break;
-    case 6:
+    case 6: /* 驱动器/磁头寄存器1f6h */
         /* select drive */
-        unit = (val >> 4) & 1;
+        unit = (val >> 4) & 1; /* bit4表示设备号,设备0表示的是主设备 */
         s = &ide_state[unit];
         ide_state[0].cur_drive = s;
         s->select = val;
         break;
     default:
-    case 7:
+    case 7: /* 命令寄存器1f7h --此寄存器中接收并保存发送到控制器的命令 */
         /* command */
 #if defined(DEBUG_IDE)
         printf("ide: CMD=%02x\n", val);
@@ -2238,18 +2324,21 @@ void ide_ioport_write(CPUX86State *env, uint32_t addr, uint32_t val)
             s->status = READY_STAT;
             ide_set_irq(s);
             break;
-        case WIN_SETMULT:
+        case WIN_SETMULT: /* 一次要读/写多个扇区 */
             if (s->nsector > MAX_MULT_SECTORS || 
                 s->nsector == 0 ||
                 (s->nsector & (s->nsector - 1)) != 0) {
                 ide_abort_command(s);
             } else {
-                s->mult_sectors = s->nsector;
+                s->mult_sectors = s->nsector; /* 记录下要读/写的扇区的个数 */
                 s->status = READY_STAT;
             }
             ide_set_irq(s);
             break;
-        case WIN_READ:
+        case WIN_READ: /* 20h -- 读取扇区计数器中的扇区数目信息 
+        * 地址寄存器中给出了第1个扇区的地址信息,在读完每个扇区之后紧跟着产生一个中断.
+        * 在该命令执行完毕之后,地址寄存器中将保存最后读取的扇区的地址信息.
+        */
         case WIN_READ_ONCE:
             s->req_nb_sectors = 1;
             ide_sector_read(s);
@@ -2260,13 +2349,13 @@ void ide_ioport_write(CPUX86State *env, uint32_t addr, uint32_t val)
             s->req_nb_sectors = 1;
             ide_transfer_start(s, 512, ide_sector_write);
             break;
-        case WIN_MULTREAD:
+        case WIN_MULTREAD: /* 一次读取多个扇区 */
             if (!s->mult_sectors)
                 goto abort_cmd;
             s->req_nb_sectors = s->mult_sectors;
             ide_sector_read(s);
             break;
-        case WIN_MULTWRITE:
+        case WIN_MULTWRITE: /* 一次写多个扇区 */
             if (!s->mult_sectors)
                 goto abort_cmd;
             s->status = SEEK_STAT;
@@ -2289,13 +2378,13 @@ void ide_ioport_write(CPUX86State *env, uint32_t addr, uint32_t val)
         }
     }
 }
-
+/* 读取数据 */
 uint32_t ide_ioport_read(CPUX86State *env, uint32_t addr)
 {
     IDEState *s = ide_state[0].cur_drive;
     int ret;
 
-    addr &= 7;
+    addr &= 7; /* 取低3bit */
     switch(addr) {
     case 0:
         ret = 0xff;
@@ -2319,7 +2408,7 @@ uint32_t ide_ioport_read(CPUX86State *env, uint32_t addr)
         ret = s->select;
         break;
     default:
-    case 7:
+    case 7: /* 状态寄存器 1f7h */
         ret = s->status;
         pic_set_irq(s->irq, 0);
         break;
@@ -2329,7 +2418,7 @@ uint32_t ide_ioport_read(CPUX86State *env, uint32_t addr)
 #endif
     return ret;
 }
-
+/* 状态读取 */
 uint32_t ide_status_read(CPUX86State *env, uint32_t addr)
 {
     IDEState *s = ide_state[0].cur_drive;
@@ -2382,6 +2471,7 @@ void ide_cmd_write(CPUX86State *env, uint32_t addr, uint32_t val)
     ide_state[0].cmd = val;
 }
 
+/* 写入2个字节 */
 void ide_data_writew(CPUX86State *env, uint32_t addr, uint32_t val)
 {
     IDEState *s = ide_state[0].cur_drive;
@@ -2394,7 +2484,7 @@ void ide_data_writew(CPUX86State *env, uint32_t addr, uint32_t val)
     if (p >= s->data_end)
         s->end_transfer_func(s);
 }
-
+/* 读取两个字节 */
 uint32_t ide_data_readw(CPUX86State *env, uint32_t addr)
 {
     IDEState *s = ide_state[0].cur_drive;
@@ -2405,7 +2495,7 @@ uint32_t ide_data_readw(CPUX86State *env, uint32_t addr)
     ret = tswap16(*(uint16_t *)p);
     p += 2;
     s->data_ptr = p;
-    if (p >= s->data_end)
+    if (p >= s->data_end) /* 读取已经完成,就需要终止读取 */
         s->end_transfer_func(s);
     return ret;
 }
@@ -2459,20 +2549,22 @@ void ide_init(void)
             bdrv_get_geometry(s->bs, &nb_sectors);
             if (s->cylinders == 0) {
                 /* if no geometry, use a LBA compatible one */
-                cylinders = nb_sectors / (16 * 63);
+                /* 这里猜测了一下柱面的个数 */
+                cylinders = nb_sectors / (16 * 63); 
                 if (cylinders > 16383)
                     cylinders = 16383;
                 else if (cylinders < 2)
                     cylinders = 2;
                 s->cylinders = cylinders;
-                s->heads = 16;
-                s->sectors = 63;
+                s->heads = 16; /* 磁头个数为16,也就是大致16个磁盘面 */
+                s->sectors = 63; /* 每个磁盘面大致63个扇区 */
             }
             s->nb_sectors = nb_sectors;
         }
         s->irq = 14;
         ide_reset(s);
     }
+    /* 注册读写函数 */
     register_ioport_write(0x1f0, 8, ide_ioport_write, 1);
     register_ioport_read(0x1f0, 8, ide_ioport_read, 1);
     register_ioport_read(0x3f6, 1, ide_status_read, 1);
@@ -2568,9 +2660,12 @@ void ide_init(void)
 
 #define KBD_QUEUE_SIZE 256
 
+/* KBDQueue定义了一个环形缓冲区 */
 typedef struct {
     uint8_t data[KBD_QUEUE_SIZE];
-    int rptr, wptr, count;
+    int rptr; /* 读指针 */
+    int wptr; /* 写指针 */
+    int count; /* 可供读取的数据的字节数 */
 } KBDQueue;
 
 typedef struct KBDState {
@@ -2623,6 +2718,7 @@ static void kbd_update_irq(KBDState *s)
     pic_set_irq(12, irq12_level);
 }
 
+/* 将数据输入队列 */
 static void kbd_queue(KBDState *s, int b, int aux)
 {
     KBDQueue *q = &kbd_state.queues[aux];
@@ -2728,12 +2824,13 @@ void kbd_write_command(CPUX86State *env, uint32_t addr, uint32_t val)
         break;
     }
 }
+
 /* 读取数据 */
 uint32_t kbd_read_data(CPUX86State *env, uint32_t addr)
 {
     KBDState *s = &kbd_state;
     KBDQueue *q;
-    int val;
+    int val; /* val为读取到的数据 */
     
     q = &s->queues[0]; /* first check KBD data */
     if (q->count == 0)
@@ -3035,9 +3132,9 @@ void kbd_write_data(CPUX86State *env, uint32_t addr, uint32_t val)
         kbd_update_irq(s);
         break;
     case KBD_CCMD_WRITE_OBUF:
-        kbd_queue(s, val, 0);
+        kbd_queue(s, val, 0); /* 将数据输入output buffer */
         break;
-    case KBD_CCMD_WRITE_AUX_OBUF:
+    case KBD_CCMD_WRITE_AUX_OBUF: /* 将数据输入第2个output buffer */
         kbd_queue(s, val, 1);
         break;
     case KBD_CCMD_WRITE_OUTPORT:
@@ -3072,6 +3169,7 @@ void kbd_reset(KBDState *s)
         q->count = 0;
     }
 }
+
 /* 键盘初始化 */
 void kbd_init(void)
 {
@@ -3137,7 +3235,7 @@ static void term_exit(void)
 {
     tcsetattr (0, TCSANOW, &oldtty);
 }
-
+/* 终端的初始化 */
 static void term_init(void)
 {
     struct termios tty;
@@ -3279,6 +3377,7 @@ int main_loop(void *opaque)
             pf++;
         }
         net_ufd = NULL;
+        /* 处理网卡收包 */
         if (net_fd > 0 && ne2000_can_receive(&ne2000_state)) {
             net_ufd = pf;
             pf->fd = net_fd;
@@ -3289,18 +3388,19 @@ int main_loop(void *opaque)
         if (gdbstub_fd > 0) {
             gdb_ufd = pf;
             pf->fd = gdbstub_fd;
-            pf->events = POLLIN;
+            pf->events = POLLIN; /* 关注收包事件 */
             pf++;
         }
 
         ret = poll(ufds, pf - ufds, timeout);
         if (ret > 0) {
             if (serial_ufd && (serial_ufd->revents & POLLIN)) {
-                n = read(0, &ch, 1);
+                n = read(0, &ch, 1); /* 读取接收到的数据 */
                 if (n == 1) {
                     serial_received_byte(&serial_ports[0], ch);
                 }
             }
+            /* 从网卡接收到数据 */
             if (net_ufd && (net_ufd->revents & POLLIN)) {
                 uint8_t buf[MAX_ETH_FRAME_SIZE];
 
@@ -3402,7 +3502,7 @@ int main(int argc, char **argv)
     gdbstub_port = DEFAULT_GDBSTUB_PORT;
     snapshot = 0;
     linux_boot = 0;
-    nodisp = 0;
+    nodisp = 1;
     for(;;) {
         c = getopt_long_only(argc, argv, "hm:dn:sp:L:", long_options, &long_index);
         if (c == -1)
@@ -3518,6 +3618,7 @@ int main(int argc, char **argv)
     total_ram_size = phys_ram_size + vga_ram_size;
     ftruncate(phys_ram_fd, total_ram_size);
     unlink(phys_ram_file);
+    /* qemu分配一块内存空间,作为模拟x86的内存条 */
     phys_ram_base = mmap(get_mmap_addr(total_ram_size), 
                          total_ram_size, 
                          PROT_WRITE | PROT_READ, MAP_SHARED | MAP_FIXED, 
@@ -3526,8 +3627,9 @@ int main(int argc, char **argv)
         fprintf(stderr, "Could not map physical memory\n");
         exit(1);
     }
-
+    printf("[D] phys_ram_base=0x%08x\n", phys_ram_base);
     /* open the virtual block devices */
+    /* 打开虚拟块设备 */
     for(i = 0; i < MAX_DISKS; i++) {
         if (hd_filename[i]) {
             bs_table[i] = bdrv_open(hd_filename[i], snapshot);
@@ -3549,7 +3651,7 @@ int main(int argc, char **argv)
     /* allocate RAM */
     cpu_register_physical_memory(0, phys_ram_size, 0);
 
-    if (linux_boot) {
+    if (linux_boot) { /* 省略bootload,直接加载镜像 */
         /* now we can load the kernel */
         ret = load_kernel(argv[optind], phys_ram_base + KERNEL_LOAD_ADDR);
         if (ret < 0) {
@@ -3580,6 +3682,7 @@ int main(int argc, char **argv)
             if (i != optind + 1)
                 pstrcat(params->commandline, sizeof(params->commandline), " ");
             pstrcat(params->commandline, sizeof(params->commandline), argv[i]);
+            printf("commandline is %s\n", params->commandline);
         }
         params->loader_type = 0x01;
         if (initrd_size > 0) {
@@ -3609,7 +3712,7 @@ int main(int argc, char **argv)
         cpu_x86_load_seg_cache(env, R_SS, KERNEL_DS, NULL, 0xffffffff, 0x00cf9200);
         cpu_x86_load_seg_cache(env, R_FS, KERNEL_DS, NULL, 0xffffffff, 0x00cf9200);
         cpu_x86_load_seg_cache(env, R_GS, KERNEL_DS, NULL, 0xffffffff, 0x00cf9200);
-        
+        /* 内核加载地址？ */
         env->eip = KERNEL_LOAD_ADDR;
         env->regs[R_ESI] = KERNEL_PARAMS_ADDR;
         env->eflags = 0x2;
