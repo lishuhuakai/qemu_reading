@@ -21,6 +21,7 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
+/* 字节顺序为MSB-LSB */
 #define USB_TOKEN_SETUP 0x2d
 #define USB_TOKEN_IN    0x69 /* device -> host */
 #define USB_TOKEN_OUT   0xe1 /* host -> device */
@@ -110,7 +111,9 @@
 typedef struct USBPort USBPort;
 typedef struct USBDevice USBDevice;
 
-/* definition of a USB device */
+/* definition of a USB device 
+ * USB设备的定义
+ */
 struct USBDevice {
     void *opaque;
     int (*handle_packet)(USBDevice *dev, int pid, 
@@ -143,6 +146,7 @@ struct USBDevice {
 typedef void (*usb_attachfn)(USBPort *port, USBDevice *dev);
 
 /* USB port on which a device can be connected */
+/* USB port用于描述设备上可以连接的端口 */
 struct USBPort {
     USBDevice *dev;
     usb_attachfn attach;

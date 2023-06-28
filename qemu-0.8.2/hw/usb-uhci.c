@@ -26,33 +26,33 @@
 //#define DEBUG
 //#define DEBUG_PACKET
 
-#define UHCI_CMD_GRESET   (1 << 2)
-#define UHCI_CMD_HCRESET  (1 << 1)
-#define UHCI_CMD_RS       (1 << 0)
+#define UHCI_CMD_GRESET   (1 << 2) /* Global reset */
+#define UHCI_CMD_HCRESET  (1 << 1) /* Host reset */
+#define UHCI_CMD_RS       (1 << 0) /* Run/Stop -- 1表示Run, 0表示Stop */
 
-#define UHCI_STS_HCHALTED (1 << 5)
-#define UHCI_STS_HCPERR   (1 << 4)
-#define UHCI_STS_HSERR    (1 << 3)
-#define UHCI_STS_RD       (1 << 2)
-#define UHCI_STS_USBERR   (1 << 1)
-#define UHCI_STS_USBINT   (1 << 0)
+#define UHCI_STS_HCHALTED (1 << 5) /* HC Halted */
+#define UHCI_STS_HCPERR   (1 << 4) /* Host Controller Process Error: the schedule is buggy */
+#define UHCI_STS_HSERR    (1 << 3) /* Host System Error: PCI problems */
+#define UHCI_STS_RD       (1 << 2) /* Resume Detect */
+#define UHCI_STS_USBERR   (1 << 1) /* Interrupt due to error */
+#define UHCI_STS_USBINT   (1 << 0) /* Interrupt due to IOC */
 
-#define TD_CTRL_SPD     (1 << 29)
+#define TD_CTRL_SPD     (1 << 29) /* Short Packet Detect */
 #define TD_CTRL_ERROR_SHIFT  27
-#define TD_CTRL_IOS     (1 << 25)
-#define TD_CTRL_IOC     (1 << 24)
-#define TD_CTRL_ACTIVE  (1 << 23)
-#define TD_CTRL_STALL   (1 << 22)
-#define TD_CTRL_BABBLE  (1 << 20)
-#define TD_CTRL_NAK     (1 << 19)
-#define TD_CTRL_TIMEOUT (1 << 18)
+#define TD_CTRL_IOS     (1 << 25) /* Isochronous Select */
+#define TD_CTRL_IOC     (1 << 24) /* Interrupt On Complete enable */
+#define TD_CTRL_ACTIVE  (1 << 23) /* TD Active */
+#define TD_CTRL_STALL   (1 << 22) /* TD Stalled */
+#define TD_CTRL_BABBLE  (1 << 20) /* Babble Detected */
+#define TD_CTRL_NAK     (1 << 19) /* Nak Received */
+#define TD_CTRL_TIMEOUT (1 << 18) /* CRC/Time Out Error */
 
-#define UHCI_PORT_RESET (1 << 9)
-#define UHCI_PORT_LSDA  (1 << 8)
-#define UHCI_PORT_ENC   (1 << 3)
-#define UHCI_PORT_EN    (1 << 2)
-#define UHCI_PORT_CSC   (1 << 1)
-#define UHCI_PORT_CCS   (1 << 0)
+#define UHCI_PORT_RESET (1 << 9) /* Port Reset */
+#define UHCI_PORT_LSDA  (1 << 8) /* Low Speed Device Attached */
+#define UHCI_PORT_ENC   (1 << 3) /* Port Enable Change */
+#define UHCI_PORT_EN    (1 << 2)  /* Port Enable */
+#define UHCI_PORT_CSC   (1 << 1) /* Connect Status Change */
+#define UHCI_PORT_CCS   (1 << 0) /* Current Connect Status ("device present") */
 
 #define FRAME_TIMER_FREQ 1000
 
@@ -69,8 +69,10 @@ typedef struct UHCIState {
     PCIDevice dev;
     uint16_t cmd; /* cmd register */
     uint16_t status;
+    /* 中断使能寄存器 */
     uint16_t intr; /* interrupt enable register */
     uint16_t frnum; /* frame number */
+    /* frame list的基址 */
     uint32_t fl_base_addr; /* frame list base address */
     uint8_t sof_timing;
     uint8_t status2; /* bit 0 and 1 are used to generate UHCI_STS_USBINT */
@@ -79,12 +81,13 @@ typedef struct UHCIState {
 } UHCIState;
 
 typedef struct UHCI_TD {
-    uint32_t link;
+    uint32_t link; /* 要么指向另外一个TD,要么指向一个QH,要么指向空(PTR_TERM) */
     uint32_t ctrl; /* see TD_CTRL_xxx */
     uint32_t token;
     uint32_t buffer;
 } UHCI_TD;
 
+/* Queue Head */
 typedef struct UHCI_QH {
     uint32_t link;
     uint32_t el_link;
@@ -173,12 +176,13 @@ static void uhci_ioport_writew(void *opaque, uint32_t addr, uint32_t val)
     case 0x00:
         if ((val & UHCI_CMD_RS) && !(s->cmd & UHCI_CMD_RS)) {
             /* start frame processing */
+            /* 开始处理frame */
             qemu_mod_timer(s->frame_timer, qemu_get_clock(vm_clock));
             s->status &= ~UHCI_STS_HCHALTED;
         } else if (!(val & UHCI_CMD_RS)) {
             s->status |= UHCI_STS_HCHALTED;
         }
-        if (val & UHCI_CMD_GRESET) {
+        if (val & UHCI_CMD_GRESET) { /* 全局重置 */
             UHCIPort *port;
             USBDevice *dev;
             int i;
@@ -210,7 +214,7 @@ static void uhci_ioport_writew(void *opaque, uint32_t addr, uint32_t val)
         uhci_update_irq(s);
         break;
     case 0x04:
-        s->intr = val;
+        s->intr = val; /* 设置中断使能寄存器 */
         uhci_update_irq(s);
         break;
     case 0x06:
@@ -243,7 +247,7 @@ static void uhci_ioport_writew(void *opaque, uint32_t addr, uint32_t val)
         break;
     }
 }
-
+/* 读取数据 */
 static uint32_t uhci_ioport_readw(void *opaque, uint32_t addr)
 {
     UHCIState *s = opaque;
@@ -258,7 +262,7 @@ static uint32_t uhci_ioport_readw(void *opaque, uint32_t addr)
         val = s->status;
         break;
     case 0x04:
-        val = s->intr;
+        val = s->intr; /* 中断使能寄存器 */
         break;
     case 0x06:
         val = s->frnum;
@@ -271,7 +275,7 @@ static uint32_t uhci_ioport_readw(void *opaque, uint32_t addr)
             if (n >= NB_PORTS) 
                 goto read_default;
             port = &s->ports[n];
-            val = port->ctrl;
+            val = port->ctrl; /* 读取某个端口的控制寄存器 */
         }
         break;
     default:
@@ -317,6 +321,10 @@ static uint32_t uhci_ioport_readl(void *opaque, uint32_t addr)
     return val;
 }
 
+/* 设备连接上端口
+ * @param port1 usb端口的抽象
+ * @param dev usb设备
+ */
 static void uhci_attach(USBPort *port1, USBDevice *dev)
 {
     UHCIState *s = port1->opaque;
@@ -327,27 +335,32 @@ static void uhci_attach(USBPort *port1, USBDevice *dev)
             usb_attach(port1, NULL);
         }
         /* set connect status */
+        /* 连接状态发生更改 -- UHCI_PORT_CSC
+         * 设备已经连接上了 -- UHCI_PORT_CCS
+         */
         port->ctrl |= UHCI_PORT_CCS | UHCI_PORT_CSC;
 
         /* update speed */
         if (dev->speed == USB_SPEED_LOW)
-            port->ctrl |= UHCI_PORT_LSDA;
+            port->ctrl |= UHCI_PORT_LSDA; /* 低速设备连接上了 */
         else
             port->ctrl &= ~UHCI_PORT_LSDA;
         port->port.dev = dev;
-        /* send the attach message */
+        /* send the attach message 
+         * 发送attach消息
+         */
         dev->handle_packet(dev, 
                            USB_MSG_ATTACH, 0, 0, NULL, 0);
     } else {
         /* set connect status */
         if (port->ctrl & UHCI_PORT_CCS) {
-            port->ctrl &= ~UHCI_PORT_CCS;
-            port->ctrl |= UHCI_PORT_CSC;
+            port->ctrl &= ~UHCI_PORT_CCS; /* 设备当前不存在 */
+            port->ctrl |= UHCI_PORT_CSC; /* 连接状态发生了更改 */
         }
         /* disable port */
         if (port->ctrl & UHCI_PORT_EN) {
-            port->ctrl &= ~UHCI_PORT_EN;
-            port->ctrl |= UHCI_PORT_ENC;
+            port->ctrl &= ~UHCI_PORT_EN; /* 端口现在不使能 */
+            port->ctrl |= UHCI_PORT_ENC; /* 端口使能状态发生了更改 */
         }
         dev = port->port.dev;
         if (dev) {
@@ -359,6 +372,11 @@ static void uhci_attach(USBPort *port1, USBDevice *dev)
     }
 }
 
+/* 广播报文
+ * @param devaddr 设备号
+ * @param devep 端点号
+ * @param data 数据
+ */
 static int uhci_broadcast_packet(UHCIState *s, uint8_t pid, 
                                  uint8_t devaddr, uint8_t devep,
                                  uint8_t *data, int len)
@@ -387,10 +405,10 @@ static int uhci_broadcast_packet(UHCIState *s, uint8_t pid,
         }
     }
 #endif
-    for(i = 0; i < NB_PORTS; i++) {
+    for(i = 0; i < NB_PORTS; i++) { /* 遍历所有的端口 */
         port = &s->ports[i];
         dev = port->port.dev;
-        if (dev && (port->ctrl & UHCI_PORT_EN)) {
+        if (dev && (port->ctrl & UHCI_PORT_EN)) { /* 端口使能 && 端口上存在设备 */
             ret = dev->handle_packet(dev, pid, 
                                      devaddr, devep,
                                      data, len);
@@ -432,30 +450,38 @@ static int uhci_handle_td(UHCIState *s, UHCI_TD *td, int *int_mask)
         return 1;
 
     /* TD is active */
-    max_len = ((td->token >> 21) + 1) & 0x7ff;
-    pid = td->token & 0xff;
+    max_len = ((td->token >> 21) + 1) & 0x7ff; /* 提取bit21 ~ bit31的数据 */
+    /* bit0 ~ bit7 ==> PID 
+     * bit8 ~ bit14 ==> 设备地址
+     * bit15 ~ bit18 ==> 端点号
+     * bit19 ==> data toggle
+     * bit20 ==> 保留
+     * bit21 ~ bit31 ==> 这次传输的最大允许字节
+     */
+    pid = td->token & 0xff; 
     switch(pid) {
     case USB_TOKEN_OUT:
     case USB_TOKEN_SETUP:
         cpu_physical_memory_read(td->buffer, buf, max_len);
         ret = uhci_broadcast_packet(s, pid, 
-                                    (td->token >> 8) & 0x7f,
-                                    (td->token >> 15) & 0xf,
+                                    (td->token >> 8) & 0x7f, /* 设备号 */
+                                    (td->token >> 15) & 0xf, /* 端点号 */
                                     buf, max_len);
         len = max_len;
         break;
-    case USB_TOKEN_IN:
+    case USB_TOKEN_IN: /* 读取数据 */
         ret = uhci_broadcast_packet(s, pid, 
                                     (td->token >> 8) & 0x7f,
                                     (td->token >> 15) & 0xf,
                                     buf, max_len);
+        /* 这里说明一下,ret代表设备的处理结果 */
         if (ret >= 0) {
             len = ret;
             if (len > max_len) {
                 len = max_len;
                 ret = USB_RET_BABBLE;
             }
-            if (len > 0) {
+            if (len > 0) { /* 将设备返回的结果直接写回去 */
                 /* write the data back */
                 cpu_physical_memory_write(td->buffer, buf, len);
             }
@@ -487,15 +513,15 @@ static int uhci_handle_td(UHCIState *s, UHCI_TD *td, int *int_mask)
     } else {
         switch(ret) {
         default:
-        case USB_RET_NODEV:
+        case USB_RET_NODEV: /* 不存在此设备 */
         do_timeout:
-            td->ctrl |= TD_CTRL_TIMEOUT;
+            td->ctrl |= TD_CTRL_TIMEOUT; /* 打上超时标记 */
             err = (td->ctrl >> TD_CTRL_ERROR_SHIFT) & 3;
-            if (err != 0) {
+            if (err != 0) { /* 获得错误标志 */
                 err--;
                 if (err == 0) {
                     td->ctrl &= ~TD_CTRL_ACTIVE;
-                    s->status |= UHCI_STS_USBERR;
+                    s->status |= UHCI_STS_USBERR; /* 更新状态寄存器 */
                     uhci_update_irq(s);
                 }
             }
@@ -503,11 +529,11 @@ static int uhci_handle_td(UHCIState *s, UHCI_TD *td, int *int_mask)
                 (err << TD_CTRL_ERROR_SHIFT);
             return 1;
         case USB_RET_NAK:
-            td->ctrl |= TD_CTRL_NAK;
+            td->ctrl |= TD_CTRL_NAK; /* 打上标志,说明接收到了NAK */
             if (pid == USB_TOKEN_SETUP)
                 goto do_timeout;
             return 1;
-        case USB_RET_STALL:
+        case USB_RET_STALL: /* 出错 */
             td->ctrl |= TD_CTRL_STALL;
             td->ctrl &= ~TD_CTRL_ACTIVE;
             return 1;
@@ -535,17 +561,18 @@ static void uhci_frame_timer(void *opaque)
         s->status |= UHCI_STS_HCHALTED;
         return;
     }
+    /* 每一个frame的大小为4字节 */
     frame_addr = s->fl_base_addr + ((s->frnum & 0x3ff) << 2);
-    cpu_physical_memory_read(frame_addr, (uint8_t *)&link, 4);
+    cpu_physical_memory_read(frame_addr, (uint8_t *)&link, 4); /* 读取4字节的frame */
     le32_to_cpus(&link);
     int_mask = 0;
     cnt = FRAME_MAX_LOOPS;
-    while ((link & 1) == 0) {
+    while ((link & 1) == 0) { /* 第1个bit用于表示该指针指向的是QH还是TD,如果为1,那么是QH */
         if (--cnt == 0)
             break;
         /* valid frame */
-        if (link & 2) {
-            /* QH */
+        if (link & 2) { /* 有效的帧 */
+            /* QH -- queue head 队列头部, QH将多个非等时TD连接起来 */
             cpu_physical_memory_read(link & ~0xf, (uint8_t *)&qh, sizeof(qh));
             le32_to_cpus(&qh.link);
             le32_to_cpus(&qh.el_link);
@@ -555,11 +582,12 @@ static void uhci_frame_timer(void *opaque)
                 link = qh.link;
             } else if (qh.el_link & 2) {
                 /* QH */
-                link = qh.el_link;
+                link = qh.el_link; /* 指向下一个元素 */
             } else {
                 /* TD */
                 if (--cnt == 0)
                     break;
+                /* 读取出一个transaction descriptor */
                 cpu_physical_memory_read(qh.el_link & ~0xf, 
                                          (uint8_t *)&td, sizeof(td));
                 le32_to_cpus(&td.link);
@@ -581,6 +609,7 @@ static void uhci_frame_timer(void *opaque)
                     /* update qh element link */
                     qh.el_link = td.link;
                     val = cpu_to_le32(qh.el_link);
+                    /* 继续读取 */
                     cpu_physical_memory_write((link & ~0xf) + 4, 
                                               (const uint8_t *)&val, 
                                               sizeof(val));
@@ -613,7 +642,7 @@ static void uhci_frame_timer(void *opaque)
             link = td.link;
         }
     }
-    s->frnum = (s->frnum + 1) & 0x7ff;
+    s->frnum = (s->frnum + 1) & 0x7ff; /* 更新帧号 */
     if (int_mask) {
         s->status2 |= int_mask;
         s->status |= UHCI_STS_USBINT;
@@ -660,7 +689,7 @@ void usb_uhci_init(PCIBus *bus, int devfn)
     pci_conf[0x3d] = 4; // interrupt pin 3
     pci_conf[0x60] = 0x10; // release number
     
-    for(i = 0; i < NB_PORTS; i++) {
+    for(i = 0; i < NB_PORTS; i++) { /* 注册usb端口 */
         qemu_register_usb_port(&s->ports[i].port, s, i, uhci_attach);
     }
     s->frame_timer = qemu_new_timer(vm_clock, uhci_frame_timer, s);

@@ -269,7 +269,7 @@ static int usb_mouse_poll(USBMouseState *s, uint8_t *buf, int len)
 
     s->dx -= dx;
     s->dy -= dy;
-    s->dz -= dz;
+    s->dz -= dz; /* 获得偏移 */
     
     b = 0;
     if (s->buttons_state & MOUSE_EVENT_LBUTTON)
@@ -365,10 +365,10 @@ static int usb_mouse_handle_control(USBDevice *dev, int request, int value,
         ret = 0;
         break;
     case DeviceOutRequest | USB_REQ_SET_ADDRESS:
-        dev->addr = value;
+        dev->addr = value; /* 设置设备地址 */
         ret = 0;
         break;
-    case DeviceRequest | USB_REQ_GET_DESCRIPTOR:
+    case DeviceRequest | USB_REQ_GET_DESCRIPTOR: /* 获取描述符 */
         switch(value >> 8) {
         case USB_DT_DEVICE:
             memcpy(data, qemu_mouse_dev_descriptor, 
@@ -426,10 +426,10 @@ static int usb_mouse_handle_control(USBDevice *dev, int request, int value,
         }
         break;
     case DeviceRequest | USB_REQ_GET_CONFIGURATION:
-        data[0] = 1;
+        data[0] = 1; /* 仅仅支持一个配置 */
         ret = 1;
         break;
-    case DeviceOutRequest | USB_REQ_SET_CONFIGURATION:
+    case DeviceOutRequest | USB_REQ_SET_CONFIGURATION: /* 设置配置 */
         ret = 0;
         break;
     case DeviceRequest | USB_REQ_GET_INTERFACE:
@@ -529,6 +529,7 @@ USBDevice *usb_tablet_init(void)
     return (USBDevice *)s;
 }
 
+/* 初始化一个usb鼠标 */
 USBDevice *usb_mouse_init(void)
 {
     USBMouseState *s;

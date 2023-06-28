@@ -57,7 +57,7 @@ int usb_generic_handle_packet(USBDevice *s, int pid,
         s->state = USB_STATE_DEFAULT;
         s->handle_reset(s);
         break;
-    case USB_TOKEN_SETUP:
+    case USB_TOKEN_SETUP: /* SETUP事务 */
         if (s->state < USB_STATE_DEFAULT || devaddr != s->addr)
             return USB_RET_NODEV;
         if (len != 8)
@@ -65,7 +65,7 @@ int usb_generic_handle_packet(USBDevice *s, int pid,
         memcpy(s->setup_buf, data, 8);
         s->setup_len = (s->setup_buf[7] << 8) | s->setup_buf[6];
         s->setup_index = 0;
-        if (s->setup_buf[0] & USB_DIR_IN) {
+        if (s->setup_buf[0] & USB_DIR_IN) { /* 收包 */
             ret = s->handle_control(s, 
                                     (s->setup_buf[0] << 8) | s->setup_buf[1],
                                     (s->setup_buf[3] << 8) | s->setup_buf[2],
@@ -84,7 +84,7 @@ int usb_generic_handle_packet(USBDevice *s, int pid,
                 s->setup_state = SETUP_STATE_DATA;
         }
         break;
-    case USB_TOKEN_IN:
+    case USB_TOKEN_IN: /* host要求device发送数据 */
         if (s->state < USB_STATE_DEFAULT || devaddr != s->addr)
             return USB_RET_NODEV;
         switch(devep) {
@@ -92,7 +92,7 @@ int usb_generic_handle_packet(USBDevice *s, int pid,
             switch(s->setup_state) {
             case SETUP_STATE_ACK:
                 if (!(s->setup_buf[0] & USB_DIR_IN)) {
-                    s->setup_state = SETUP_STATE_IDLE;
+                    s->setup_state = SETUP_STATE_IDLE; /* 切换到idle状态 */
                     ret = s->handle_control(s, 
                                       (s->setup_buf[0] << 8) | s->setup_buf[1],
                                       (s->setup_buf[3] << 8) | s->setup_buf[2],
@@ -105,7 +105,7 @@ int usb_generic_handle_packet(USBDevice *s, int pid,
                     /* return 0 byte */
                 }
                 break;
-            case SETUP_STATE_DATA:
+            case SETUP_STATE_DATA: /* 处于发送数据的状态 */
                 if (s->setup_buf[0] & USB_DIR_IN) {
                     l = s->setup_len - s->setup_index;
                     if (l > len)
@@ -113,7 +113,7 @@ int usb_generic_handle_packet(USBDevice *s, int pid,
                     memcpy(data, s->data_buf + s->setup_index, l);
                     s->setup_index += l;
                     if (s->setup_index >= s->setup_len)
-                        s->setup_state = SETUP_STATE_ACK;
+                        s->setup_state = SETUP_STATE_ACK; /* 等待host的ack */
                     ret = l;
                 } else {
                     s->setup_state = SETUP_STATE_IDLE;
@@ -129,7 +129,7 @@ int usb_generic_handle_packet(USBDevice *s, int pid,
             break;
         }
         break;
-    case USB_TOKEN_OUT:
+    case USB_TOKEN_OUT: /* host -> device */
         if (s->state < USB_STATE_DEFAULT || devaddr != s->addr)
             return USB_RET_NODEV;
         switch(devep) {
@@ -148,7 +148,7 @@ int usb_generic_handle_packet(USBDevice *s, int pid,
                     l = s->setup_len - s->setup_index;
                     if (l > len)
                         l = len;
-                    memcpy(s->data_buf + s->setup_index, data, l);
+                    memcpy(s->data_buf + s->setup_index, data, l); /* 拷贝数据 */
                     s->setup_index += l;
                     if (s->setup_index >= s->setup_len)
                         s->setup_state = SETUP_STATE_ACK;

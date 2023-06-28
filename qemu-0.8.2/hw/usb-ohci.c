@@ -104,30 +104,35 @@ struct ohci_hcca {
 #define OHCI_ED_EN_SHIFT  7
 #define OHCI_ED_EN_MASK   (0xf<<OHCI_ED_EN_SHIFT)
 #define OHCI_ED_D_SHIFT   11
-#define OHCI_ED_D_MASK    (3<<OHCI_ED_D_SHIFT)
-#define OHCI_ED_S         (1<<13)
-#define OHCI_ED_K         (1<<14)
-#define OHCI_ED_F         (1<<15)
+#define OHCI_ED_D_MASK    (3<<OHCI_ED_D_SHIFT) /*direction 包括in以及out*/
+#define OHCI_ED_S         (1<<13) /* ed_lowspeed */
+#define OHCI_ED_K         (1<<14) /* ed_skip */
+#define OHCI_ED_F         (1<<15) /* ed_iso */
 #define OHCI_ED_MPS_SHIFT 7
 #define OHCI_ED_MPS_MASK  (0xf<<OHCI_ED_FA_SHIFT)
 
 /* Flags in the head field of an Endpoint Desciptor.  */
-#define OHCI_ED_H         1
-#define OHCI_ED_C         2
+#define OHCI_ED_H         1 /* halted */
+#define OHCI_ED_C         2 /* toggle carry */
 
-/* Bitfields for the first word of a Transfer Desciptor.  */
-#define OHCI_TD_R         (1<<18)
-#define OHCI_TD_DP_SHIFT  19
-#define OHCI_TD_DP_MASK   (3<<OHCI_TD_DP_SHIFT)
+/* Bitfields for the first word of a Transfer Desciptor. 
+ * 参考ohci.h
+ */
+#define OHCI_TD_R         (1<<18) /* round: short packets OK? */
+#define OHCI_TD_DP_SHIFT  19 
+#define OHCI_TD_DP_MASK   (3<<OHCI_TD_DP_SHIFT) /* direction/pid */
 #define OHCI_TD_DI_SHIFT  21
 #define OHCI_TD_DI_MASK   (7<<OHCI_TD_DI_SHIFT)
-#define OHCI_TD_T0        (1<<24)
-#define OHCI_TD_T1        (1<<24)
+#define OHCI_TD_T0        (1<<24) /* DATA0 */
+#define OHCI_TD_T1        (1<<24) /* DATA1 */
 #define OHCI_TD_EC_SHIFT  26
-#define OHCI_TD_EC_MASK   (3<<OHCI_TD_EC_SHIFT)
+#define OHCI_TD_EC_MASK   (3<<OHCI_TD_EC_SHIFT) /* error count */
 #define OHCI_TD_CC_SHIFT  28
-#define OHCI_TD_CC_MASK   (0xf<<OHCI_TD_CC_SHIFT)
-
+#define OHCI_TD_CC_MASK   (0xf<<OHCI_TD_CC_SHIFT) /* condition code */
+/* OHCI_TD_CC_STALL
+ * OHCI_TD_CC_DATAOVERRUN
+ * OHCI_TD_CC_UNDEXPETEDPID
+ */
 #define OHCI_DPTR_MASK    0xfffffff0
 
 #define OHCI_BM(val, field) \
@@ -157,25 +162,31 @@ struct ohci_td {
 #define USB_HZ                      12000000
 
 /* OHCI Local stuff */
-#define OHCI_CTL_CBSR         ((1<<0)|(1<<1))
-#define OHCI_CTL_PLE          (1<<2)
-#define OHCI_CTL_IE           (1<<3)
-#define OHCI_CTL_CLE          (1<<4)
-#define OHCI_CTL_BLE          (1<<5)
-#define OHCI_CTL_HCFS         ((1<<6)|(1<<7))
+/*
+ * HcControl (control) register masks
+ */
+#define OHCI_CTL_CBSR         ((1<<0)|(1<<1)) /* control/bulk service ratio */
+#define OHCI_CTL_PLE          (1<<2) /* periodic list enable */
+#define OHCI_CTL_IE           (1<<3) /* isochronous enable */
+#define OHCI_CTL_CLE          (1<<4) /* control list enable */
+#define OHCI_CTL_BLE          (1<<5) /* bulk list enable */
+#define OHCI_CTL_HCFS         ((1<<6)|(1<<7)) /* host controller functional state */
 #define  OHCI_USB_RESET       0x00
 #define  OHCI_USB_RESUME      0x40
 #define  OHCI_USB_OPERATIONAL 0x80
-#define  OHCI_USB_SUSPEND     0xc0
-#define OHCI_CTL_IR           (1<<8)
-#define OHCI_CTL_RWC          (1<<9)
-#define OHCI_CTL_RWE          (1<<10)
+#define  OHCI_USB_SUSPEND     0xc0 
+#define OHCI_CTL_IR           (1<<8) /* interrupt routing */
+#define OHCI_CTL_RWC          (1<<9) /* remote wakeup connected */
+#define OHCI_CTL_RWE          (1<<10) /* remote wakeup enable */
 
-#define OHCI_STATUS_HCR       (1<<0)
-#define OHCI_STATUS_CLF       (1<<1)
-#define OHCI_STATUS_BLF       (1<<2)
-#define OHCI_STATUS_OCR       (1<<3)
-#define OHCI_STATUS_SOC       ((1<<6)|(1<<7))
+/*
+ * HcCommandStatus (cmdstatus) register masks
+ */
+#define OHCI_STATUS_HCR       (1<<0) /* host controller reset */
+#define OHCI_STATUS_CLF       (1<<1) /* control list filled */
+#define OHCI_STATUS_BLF       (1<<2) /* bulk list filled */
+#define OHCI_STATUS_OCR       (1<<3) /* ownership change request */
+#define OHCI_STATUS_SOC       ((1<<6)|(1<<7)) /* scheduling overrun count */
 
 #define OHCI_INTR_SO          (1<<0) /* Scheduling overrun */
 #define OHCI_INTR_WD          (1<<1) /* HcDoneHead writeback */
@@ -201,32 +212,33 @@ struct ohci_td {
 #define OHCI_LS_THRESH        0x628
 
 #define OHCI_RHA_RW_MASK      0x00000000 /* Mask of supported features.  */
-#define OHCI_RHA_PSM          (1<<8)
-#define OHCI_RHA_NPS          (1<<9)
-#define OHCI_RHA_DT           (1<<10)
-#define OHCI_RHA_OCPM         (1<<11)
-#define OHCI_RHA_NOCP         (1<<12)
-#define OHCI_RHA_POTPGT_MASK  0xff000000
+#define OHCI_RHA_PSM          (1<<8) /* power switching mode */
+#define OHCI_RHA_NPS          (1<<9) /* no power switching */
+#define OHCI_RHA_DT           (1<<10) /* device type (mbz) */
+#define OHCI_RHA_OCPM         (1<<11) /* over current protection mode */
+#define OHCI_RHA_NOCP         (1<<12) /* no over current protection */
+#define OHCI_RHA_POTPGT_MASK  0xff000000 /* power on to power good time */
 
-#define OHCI_RHS_LPS          (1<<0)
-#define OHCI_RHS_OCI          (1<<1)
-#define OHCI_RHS_DRWE         (1<<15)
-#define OHCI_RHS_LPSC         (1<<16)
-#define OHCI_RHS_OCIC         (1<<17)
-#define OHCI_RHS_CRWE         (1<<31)
+/* roothub.status bits */
+#define OHCI_RHS_LPS          (1<<0) /* local power status */
+#define OHCI_RHS_OCI          (1<<1) /* over current indicator */
+#define OHCI_RHS_DRWE         (1<<15) /* device remote wakeup enable */
+#define OHCI_RHS_LPSC         (1<<16) /* local power status change */
+#define OHCI_RHS_OCIC         (1<<17) /* over current indicator change */
+#define OHCI_RHS_CRWE         (1<<31) /* clear remote wakeup enable */
 
-#define OHCI_PORT_CCS         (1<<0)
-#define OHCI_PORT_PES         (1<<1)
-#define OHCI_PORT_PSS         (1<<2)
-#define OHCI_PORT_POCI        (1<<3)
-#define OHCI_PORT_PRS         (1<<4)
-#define OHCI_PORT_PPS         (1<<8)
-#define OHCI_PORT_LSDA        (1<<9)
-#define OHCI_PORT_CSC         (1<<16)
-#define OHCI_PORT_PESC        (1<<17)
-#define OHCI_PORT_PSSC        (1<<18)
-#define OHCI_PORT_OCIC        (1<<19)
-#define OHCI_PORT_PRSC        (1<<20)
+#define OHCI_PORT_CCS         (1<<0) /* current connect status */
+#define OHCI_PORT_PES         (1<<1) /* port enable status */
+#define OHCI_PORT_PSS         (1<<2) /* port suspend status */
+#define OHCI_PORT_POCI        (1<<3) /* port over current indicator */
+#define OHCI_PORT_PRS         (1<<4) /* port reset status */
+#define OHCI_PORT_PPS         (1<<8) /* port power status */
+#define OHCI_PORT_LSDA        (1<<9) /* low speed device attached */
+#define OHCI_PORT_CSC         (1<<16) /* connect status change */
+#define OHCI_PORT_PESC        (1<<17) /* port enable status change */
+#define OHCI_PORT_PSSC        (1<<18) /* port suspend status change */
+#define OHCI_PORT_OCIC        (1<<19) /* over current indicator change */
+#define OHCI_PORT_PRSC        (1<<20) /* port reset status change */
 #define OHCI_PORT_WTC         (OHCI_PORT_CSC|OHCI_PORT_PESC|OHCI_PORT_PSSC \
                                |OHCI_PORT_OCIC|OHCI_PORT_PRSC)
 
@@ -267,7 +279,9 @@ static inline void ohci_set_interrupt(OHCIState *ohci, uint32_t intr)
     ohci_intr_update(ohci);
 }
 
-/* Attach or detach a device on a root hub port.  */
+/* Attach or detach a device on a root hub port.
+ * 将一个设备连接到root hub port上面
+ */
 static void ohci_attach(USBPort *port1, USBDevice *dev)
 {
     OHCIState *s = port1->opaque;
@@ -283,7 +297,7 @@ static void ohci_attach(USBPort *port1, USBDevice *dev)
 
         /* update speed */
         if (dev->speed == USB_SPEED_LOW)
-            port->ctrl |= OHCI_PORT_LSDA;
+            port->ctrl |= OHCI_PORT_LSDA; /* 连接上了低速设备 */
         else
             port->ctrl &= ~OHCI_PORT_LSDA;
         port->port.dev = dev;
@@ -293,12 +307,12 @@ static void ohci_attach(USBPort *port1, USBDevice *dev)
         dprintf("usb-ohci: Attached port %d\n", port1->index);
     } else {
         /* set connect status */
-        if (port->ctrl & OHCI_PORT_CCS) {
-            port->ctrl &= ~OHCI_PORT_CCS;
-            port->ctrl |= OHCI_PORT_CSC;
+        if (port->ctrl & OHCI_PORT_CCS) { 
+            port->ctrl &= ~OHCI_PORT_CCS; /* 当前没有设备连接在端口上 */
+            port->ctrl |= OHCI_PORT_CSC; /* 连接状态发生了改变 */
         }
         /* disable port */
-        if (port->ctrl & OHCI_PORT_PES) {
+        if (port->ctrl & OHCI_PORT_PES) { /* 端口禁用 */
             port->ctrl &= ~OHCI_PORT_PES;
             port->ctrl |= OHCI_PORT_PESC;
         }
@@ -316,7 +330,9 @@ static void ohci_attach(USBPort *port1, USBDevice *dev)
         ohci_set_interrupt(s, OHCI_INTR_RHSC);
 }
 
-/* Reset the controller */
+/* Reset the controller 
+ * 重置控制器
+ */
 static void ohci_reset(OHCIState *ohci)
 {
     OHCIPort *port;
@@ -424,8 +440,9 @@ static void ohci_copy_td(struct ohci_td *td, uint8_t *buf, int len, int write)
 }
 
 /* Service a transport descriptor.
-   Returns nonzero to terminate processing of this endpoint.  */
-
+   Returns nonzero to terminate processing of this endpoint. 
+ */
+/* 处理传输描述符 */
 static int ohci_service_td(OHCIState *ohci, struct ohci_ed *ed)
 {
     int dir;
@@ -446,7 +463,7 @@ static int ohci_service_td(OHCIState *ohci, struct ohci_ed *ed)
         return 0;
     }
 
-    dir = OHCI_BM(ed->flags, ED_D);
+    dir = OHCI_BM(ed->flags, ED_D); /* OHCI_ED_D */
     switch (dir) {
     case OHCI_TD_DIR_OUT:
     case OHCI_TD_DIR_IN:
@@ -501,7 +518,7 @@ static int ohci_service_td(OHCIState *ohci, struct ohci_ed *ed)
     ret = USB_RET_NODEV;
     for (i = 0; i < ohci->num_ports; i++) {
         dev = ohci->rhport[i].port.dev;
-        if ((ohci->rhport[i].ctrl & OHCI_PORT_PES) == 0)
+        if ((ohci->rhport[i].ctrl & OHCI_PORT_PES) == 0) /* 排除掉没有使能的端口 */
             continue;
 
         ret = dev->handle_packet(dev, pid, OHCI_BM(ed->flags, ED_FA),
@@ -559,7 +576,7 @@ static int ohci_service_td(OHCIState *ohci, struct ohci_ed *ed)
                 return 1;
             case USB_RET_STALL:
                 dprintf("usb-ohci: got STALL\n");
-                OHCI_SET_BM(td.flags, TD_CC, OHCI_CC_STALL);
+                OHCI_SET_BM(td.flags, TD_CC, OHCI_CC_STALL); /* 打上标记 */
                 break;
             case USB_RET_BABBLE:
                 dprintf("usb-ohci: got BABBLE\n");
@@ -587,7 +604,9 @@ static int ohci_service_td(OHCIState *ohci, struct ohci_ed *ed)
     return OHCI_BM(td.flags, TD_CC) != OHCI_CC_NOERROR;
 }
 
-/* Service an endpoint list.  Returns nonzero if active TD were found.  */
+/* Service an endpoint list.  Returns nonzero if active TD were found. 
+ * 处理一个endpoint list
+ */
 static int ohci_service_ed_list(OHCIState *ohci, uint32_t head)
 {
     struct ohci_ed ed;
@@ -601,12 +620,12 @@ static int ohci_service_ed_list(OHCIState *ohci, uint32_t head)
         return 0;
 
     for (cur = head; cur; cur = next_ed) {
-        if (!ohci_read_ed(cur, &ed)) {
+        if (!ohci_read_ed(cur, &ed)) { /* 读取出ED */
             fprintf(stderr, "usb-ohci: ED read error at %x\n", cur);
             return 0;
         }
 
-        next_ed = ed.next & OHCI_DPTR_MASK;
+        next_ed = ed.next & OHCI_DPTR_MASK; /* 下一个endpoint */
 
         if ((ed.head & OHCI_ED_H) || (ed.flags & OHCI_ED_K))
             continue;
@@ -646,7 +665,9 @@ static void ohci_sof(OHCIState *ohci)
     ohci_set_interrupt(ohci, OHCI_INTR_SF);
 }
 
-/* Do frame processing on frame boundary */
+/* Do frame processing on frame boundary 
+ * 定时器回调函数,处理frame
+ */
 static void ohci_frame_boundary(void *opaque)
 {
     OHCIState *ohci = opaque;
@@ -655,12 +676,13 @@ static void ohci_frame_boundary(void *opaque)
     cpu_physical_memory_rw(ohci->hcca, (uint8_t *)&hcca, sizeof(hcca), 0);
 
     /* Process all the lists at the end of the frame */
-    if (ohci->ctl & OHCI_CTL_PLE) {
+    if (ohci->ctl & OHCI_CTL_PLE) { /* 使能periodic list */
         int n;
 
         n = ohci->frame_number & 0x1f;
         ohci_service_ed_list(ohci, le32_to_cpu(hcca.intr[n]));
     }
+    /* 使能control list,并且control list已经由驱动填充好了 */
     if ((ohci->ctl & OHCI_CTL_CLE) && (ohci->status & OHCI_STATUS_CLF)) {
         if (ohci->ctrl_cur && ohci->ctrl_cur != ohci->ctrl_head)
           dprintf("usb-ohci: head %x, cur %x\n", ohci->ctrl_head, ohci->ctrl_cur);
@@ -669,7 +691,7 @@ static void ohci_frame_boundary(void *opaque)
             ohci->status &= ~OHCI_STATUS_CLF;
         }
     }
-
+    /* 使能bulk list,并且bulk list已经填充好了 */
     if ((ohci->ctl & OHCI_CTL_BLE) && (ohci->status & OHCI_STATUS_BLF)) {
         if (!ohci_service_ed_list(ohci, ohci->bulk_head)) {
             ohci->bulk_cur = 0;
@@ -681,7 +703,7 @@ static void ohci_frame_boundary(void *opaque)
     ohci->frt = ohci->fit;
 
     /* XXX: endianness */
-    ohci->frame_number = (ohci->frame_number + 1) & 0xffff;
+    ohci->frame_number = (ohci->frame_number + 1) & 0xffff; /* 更新frame number */
     hcca.frame = cpu_to_le32(ohci->frame_number);
 
     if (ohci->done_count == 0 && !(ohci->intr_status & OHCI_INTR_WD)) {
@@ -751,7 +773,7 @@ static int ohci_port_set_if_connected(OHCIState *ohci, int i, uint32_t val)
      * ConnectStatusChange
      */
     if (!(ohci->rhport[i].ctrl & OHCI_PORT_CCS)) {
-        ohci->rhport[i].ctrl |= OHCI_PORT_CSC;
+        ohci->rhport[i].ctrl |= OHCI_PORT_CSC; /* 表示当前已经连接成功 */
         if (ohci->rhstatus & OHCI_RHS_DRWE) {
             /* TODO: CSC is a wakeup event */
         }
@@ -792,7 +814,9 @@ static void ohci_port_power(OHCIState *ohci, int i, int p)
     }
 }
 
-/* Set HcControlRegister */
+/* Set HcControlRegister
+ * 设置控制寄存器
+ */
 static void ohci_set_ctl(OHCIState *ohci, uint32_t val)
 {
     uint32_t old_state;
@@ -807,7 +831,7 @@ static void ohci_set_ctl(OHCIState *ohci, uint32_t val)
         return;
 
     switch (new_state) {
-    case OHCI_USB_OPERATIONAL:
+    case OHCI_USB_OPERATIONAL: /* usb可操作 */
         ohci_bus_start(ohci);
         break;
     case OHCI_USB_SUSPEND:
@@ -847,7 +871,9 @@ static uint32_t ohci_get_frame_remaining(OHCIState *ohci)
 }
 
 
-/* Set root hub status */
+/* Set root hub status 
+ * 设置root hub的状态
+ */
 static void ohci_set_hub_status(OHCIState *ohci, uint32_t val)
 {
     uint32_t old_state;
@@ -862,7 +888,7 @@ static void ohci_set_hub_status(OHCIState *ohci, uint32_t val)
         int i;
 
         for (i = 0; i < ohci->num_ports; i++)
-            ohci_port_power(ohci, i, 0);
+            ohci_port_power(ohci, i, 0); /* down掉所有的端口 */
         dprintf("usb-ohci: powered down all ports\n");
     }
 
@@ -870,7 +896,7 @@ static void ohci_set_hub_status(OHCIState *ohci, uint32_t val)
         int i;
 
         for (i = 0; i < ohci->num_ports; i++)
-            ohci_port_power(ohci, i, 1);
+            ohci_port_power(ohci, i, 1); /* 将所有的端口up起来 */
         dprintf("usb-ohci: powered up all ports\n");
     }
 
@@ -880,11 +906,13 @@ static void ohci_set_hub_status(OHCIState *ohci, uint32_t val)
     if (val & OHCI_RHS_CRWE)
         ohci->rhstatus &= ~OHCI_RHS_DRWE;
 
-    if (old_state != ohci->rhstatus)
+    if (old_state != ohci->rhstatus) /* 状态发生了更改?? */
         ohci_set_interrupt(ohci, OHCI_INTR_RHSC);
 }
 
-/* Set root hub port status */
+/* Set root hub port status
+ * 设置root hub端口状态
+ */
 static void ohci_port_set_status(OHCIState *ohci, int portnum, uint32_t val)
 {
     uint32_t old_state;
@@ -900,12 +928,12 @@ static void ohci_port_set_status(OHCIState *ohci, int portnum, uint32_t val)
     if (val & OHCI_PORT_CCS)
         port->ctrl &= ~OHCI_PORT_PES;
 
-    ohci_port_set_if_connected(ohci, portnum, val & OHCI_PORT_PES);
+    ohci_port_set_if_connected(ohci, portnum, val & OHCI_PORT_PES); /* 端口使能 */
 
     if (ohci_port_set_if_connected(ohci, portnum, val & OHCI_PORT_PSS))
         dprintf("usb-ohci: port %d: SUSPEND\n", portnum);
 
-    if (ohci_port_set_if_connected(ohci, portnum, val & OHCI_PORT_PRS)) {
+    if (ohci_port_set_if_connected(ohci, portnum, val & OHCI_PORT_PRS)) { /* 端口被重置 */
         dprintf("usb-ohci: port %d: RESET\n", portnum);
         port->port.dev->handle_packet(port->port.dev, USB_MSG_RESET,
                                       0, 0, NULL, 0);
@@ -919,7 +947,7 @@ static void ohci_port_set_status(OHCIState *ohci, int portnum, uint32_t val)
      */
     if (val & OHCI_PORT_LSDA)
         ohci_port_power(ohci, portnum, 0);
-    if (val & OHCI_PORT_PPS)
+    if (val & OHCI_PORT_PPS) /* 什么叫做端口电源状态? */
         ohci_port_power(ohci, portnum, 1);
 
     if (old_state != port->ctrl)
@@ -1012,7 +1040,7 @@ static uint32_t ohci_mem_read(void *ptr, target_phys_addr_t addr)
         return 0xffffffff;
     }
 }
-
+/* 设置相关的寄存器 */
 static void ohci_mem_write(void *ptr, target_phys_addr_t addr, uint32_t val)
 {
     OHCIState *ohci = ptr;
@@ -1136,6 +1164,7 @@ static void ohci_mapfunc(PCIDevice *pci_dev, int i,
     cpu_register_physical_memory(addr, size, ohci->mem);
 }
 
+/* 初始化ohci */
 void usb_ohci_init(struct PCIBus *bus, int num_ports, int devfn)
 {
     OHCIState *ohci;
