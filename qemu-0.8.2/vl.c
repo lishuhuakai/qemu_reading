@@ -5053,20 +5053,20 @@ int main_loop(void)
 #endif
     CPUState *env;
 
-    cur_cpu = first_cpu;
+    cur_cpu = first_cpu; /* 切换到第1个cpu */
     for(;;) {
         if (vm_running) {
 
             env = cur_cpu;
             for(;;) {
                 /* get next cpu */
-                env = env->next_cpu;
+                env = env->next_cpu; /* 切换至下一个cpu */
                 if (!env)
                     env = first_cpu;
 #ifdef CONFIG_PROFILER
                 ti = profile_getclock();
 #endif
-                ret = cpu_exec(env);
+                ret = cpu_exec(env); /* 运行 */
 #ifdef CONFIG_PROFILER
                 qemu_time += profile_getclock() - ti;
 #endif

@@ -46,9 +46,9 @@ do { printf("IRQ: " fmt , ##args); } while (0)
 #define MAX_CPUS 16
 
 typedef struct SLAVIO_INTCTLState {
-    uint32_t intreg_pending[MAX_CPUS];
+    uint32_t intreg_pending[MAX_CPUS]; /* 记录每一个cpu上待处理的中断 */
     uint32_t intregm_pending;
-    uint32_t intregm_disabled;
+    uint32_t intregm_disabled; /* 被禁止的中断 */
     uint32_t target_cpu;
 #ifdef DEBUG_IRQ_COUNT
     uint64_t irq_count[32];
@@ -61,6 +61,7 @@ typedef struct SLAVIO_INTCTLState {
 static void slavio_check_interrupts(void *opaque);
 
 // per-cpu interrupt controller
+/* 每个cpu都有一个中断控制器 */
 static uint32_t slavio_intctl_mem_readl(void *opaque, target_phys_addr_t addr)
 {
     SLAVIO_INTCTLState *s = opaque;
@@ -71,9 +72,9 @@ static uint32_t slavio_intctl_mem_readl(void *opaque, target_phys_addr_t addr)
     saddr = (addr & INTCTL_MAXADDR) >> 2;
     switch (saddr) {
     case 0:
-	return s->intreg_pending[cpu];
+        return s->intreg_pending[cpu];
     default:
-	break;
+        break;
     }
     return 0;
 }
@@ -88,20 +89,26 @@ static void slavio_intctl_mem_writel(void *opaque, target_phys_addr_t addr, uint
     saddr = (addr & INTCTL_MAXADDR) >> 2;
     switch (saddr) {
     case 1: // clear pending softints
-	if (val & 0x4000)
-	    val |= 80000000;
-	val &= 0xfffe0000;
-	s->intreg_pending[cpu] &= ~val;
-	DPRINTF("Cleared cpu %d irq mask %x, curmask %x\n", cpu, val, s->intreg_pending[cpu]);
-	break;
+    /* 寄存器示意图如下,softint为高15bit
+     *----------------------------------------------------------------------
+     *|         SOFTINT[15:1]          | 0 |      HARDINT[15:1]        | 0 |
+     *----------------------------------------------------------------------
+     * 31                          17   16   15                    01   00
+     */
+        if (val & 0x4000)
+            val |= 80000000;
+        val &= 0xfffe0000;
+        s->intreg_pending[cpu] &= ~val; /* 清理掉那些不在val中的softint */
+        DPRINTF("Cleared cpu %d irq mask %x, curmask %x\n", cpu, val, s->intreg_pending[cpu]);
+        break;
     case 2: // set softint
-	val &= 0xfffe0000;
-	s->intreg_pending[cpu] |= val;
+        val &= 0xfffe0000;
+        s->intreg_pending[cpu] |= val; /* 设置那些在val中的softint */
         slavio_check_interrupts(s);
-	DPRINTF("Set cpu %d irq mask %x, curmask %x\n", cpu, val, s->intreg_pending[cpu]);
-	break;
+        DPRINTF("Set cpu %d irq mask %x, curmask %x\n", cpu, val, s->intreg_pending[cpu]);
+        break;
     default:
-	break;
+        break;
     }
 }
 
@@ -126,13 +133,13 @@ static uint32_t slavio_intctlm_mem_readl(void *opaque, target_phys_addr_t addr)
     saddr = (addr & INTCTLM_MAXADDR) >> 2;
     switch (saddr) {
     case 0:
-	return s->intregm_pending & 0x7fffffff;
+        return s->intregm_pending & 0x7fffffff;
     case 1:
-	return s->intregm_disabled;
+        return s->intregm_disabled;
     case 4:
-	return s->target_cpu;
+        return s->target_cpu;
     default:
-	break;
+        break;
     }
     return 0;
 }
@@ -145,25 +152,25 @@ static void slavio_intctlm_mem_writel(void *opaque, target_phys_addr_t addr, uin
     saddr = (addr & INTCTLM_MAXADDR) >> 2;
     switch (saddr) {
     case 2: // clear (enable)
-	// Force clear unused bits
-	val &= ~0x4fb2007f;
-	s->intregm_disabled &= ~val;
-	DPRINTF("Enabled master irq mask %x, curmask %x\n", val, s->intregm_disabled);
-	slavio_check_interrupts(s);
-	break;
+        // Force clear unused bits
+        val &= ~0x4fb2007f;
+        s->intregm_disabled &= ~val;
+        DPRINTF("Enabled master irq mask %x, curmask %x\n", val, s->intregm_disabled);
+        slavio_check_interrupts(s);
+        break;
     case 3: // set (disable, clear pending)
-	// Force clear unused bits
-	val &= ~0x4fb2007f;
-	s->intregm_disabled |= val;
-	s->intregm_pending &= ~val;
-	DPRINTF("Disabled master irq mask %x, curmask %x\n", val, s->intregm_disabled);
-	break;
+        // Force clear unused bits
+        val &= ~0x4fb2007f;
+        s->intregm_disabled |= val;
+        s->intregm_pending &= ~val;
+        DPRINTF("Disabled master irq mask %x, curmask %x\n", val, s->intregm_disabled);
+        break;
     case 4:
-	s->target_cpu = val & (MAX_CPUS - 1);
-	DPRINTF("Set master irq cpu %d\n", s->target_cpu);
-	break;
+        s->target_cpu = val & (MAX_CPUS - 1);
+        DPRINTF("Set master irq cpu %d\n", s->target_cpu);
+        break;
     default:
-	break;
+        break;
     }
 }
 
@@ -185,7 +192,7 @@ void slavio_pic_info(void *opaque)
     int i;
 
     for (i = 0; i < MAX_CPUS; i++) {
-	term_printf("per-cpu %d: pending 0x%08x\n", i, s->intreg_pending[i]);
+        term_printf("per-cpu %d: pending 0x%08x\n", i, s->intreg_pending[i]);
     }
     term_printf("master: pending 0x%08x, disabled 0x%08x\n", s->intregm_pending, s->intregm_disabled);
 }
@@ -213,6 +220,7 @@ static const uint32_t intbit_to_level[32] = {
     6, 0, 4, 10, 8, 0, 11, 0,	0, 0, 0, 0, 15, 0, 15, 0,
 };
 
+/* 检查中断 */
 static void slavio_check_interrupts(void *opaque)
 {
     CPUState *env;
@@ -229,10 +237,10 @@ static void slavio_check_interrupts(void *opaque)
 		    max = intbit_to_level[i];
 	    }
 	}
-        env = s->cpu_envs[s->target_cpu];
-        if (!env) {
+    env = s->cpu_envs[s->target_cpu]; /* 选择目标cpu */
+    if (!env) {
 	    DPRINTF("No CPU %d, not triggered (pending %x)\n", s->target_cpu, pending);
-        }
+    }
 	else {
             if (env->halted)
                 env->halted = 0;
@@ -242,14 +250,14 @@ static void slavio_check_interrupts(void *opaque)
                 s->irq_count[max]++;
 #endif
                 env->interrupt_index = TT_EXTINT | max;
-                cpu_interrupt(env, CPU_INTERRUPT_HARD);
+                cpu_interrupt(env, CPU_INTERRUPT_HARD); /* 触发cpu中断 */
             }
             else
                 DPRINTF("Not triggered (pending %x), pending exception %x\n", pending, env->interrupt_index);
-	}
+	    }
     }
     else
-	DPRINTF("Not triggered (pending %x), disabled %x\n", pending, s->intregm_disabled);
+        DPRINTF("Not triggered (pending %x), disabled %x\n", pending, s->intregm_disabled);
     
     for (i = 0; i < MAX_CPUS; i++) {
         max = 0;
@@ -262,16 +270,16 @@ static void slavio_check_interrupts(void *opaque)
                     max = j - 16;
             }
         }
-	if (max > 0) {
+        if (max > 0) { /* max表示优先级最高的中断 */
             if (env->halted)
                 env->halted = 0;
             if (env->interrupt_index == 0) {
                 DPRINTF("Triggered softint %d for cpu %d (pending %x)\n", max, i, pending);
 #ifdef DEBUG_IRQ_COUNT
-                s->irq_count[max]++;
+                s->irq_count[max]++; /* 统计中断触发的次数 */
 #endif
                 env->interrupt_index = TT_EXTINT | max;
-                cpu_interrupt(env, CPU_INTERRUPT_HARD);
+                cpu_interrupt(env, CPU_INTERRUPT_HARD); /* 触发cpu中断 */
             }
         }
     }
@@ -287,22 +295,25 @@ void slavio_pic_set_irq(void *opaque, int irq, int level)
 
     DPRINTF("Set cpu %d irq %d level %d\n", s->target_cpu, irq, level);
     if (irq < 32) {
-	uint32_t mask = 1 << irq;
-	uint32_t pil = intbit_to_level[irq];
-	if (pil > 0) {
-	    if (level) {
-		s->intregm_pending |= mask;
-		s->intreg_pending[s->target_cpu] |= 1 << pil;
-	    }
-	    else {
-		s->intregm_pending &= ~mask;
-		s->intreg_pending[s->target_cpu] &= ~(1 << pil);
-	    }
-	}
+        uint32_t mask = 1 << irq;
+        uint32_t pil = intbit_to_level[irq];
+        if (pil > 0) {
+            if (level) {
+                s->intregm_pending |= mask;
+                s->intreg_pending[s->target_cpu] |= 1 << pil; /* 记录下已经发生的中断 */
+            }
+            else {
+                s->intregm_pending &= ~mask; /* 去掉标记?? */
+                s->intreg_pending[s->target_cpu] &= ~(1 << pil);
+            }
+        }
     }
     slavio_check_interrupts(s);
 }
-
+/* 通知cpu发生了中断
+ * @param irq 中断号
+ * @param cpu 发生中断的cpu标号
+ */
 void slavio_pic_set_irq_cpu(void *opaque, int irq, int level, unsigned int cpu)
 {
     SLAVIO_INTCTLState *s = opaque;
@@ -313,15 +324,15 @@ void slavio_pic_set_irq_cpu(void *opaque, int irq, int level, unsigned int cpu)
         return;
     }
     if (irq < 32) {
-	uint32_t pil = intbit_to_level[irq];
+        uint32_t pil = intbit_to_level[irq];
     	if (pil > 0) {
-	    if (level) {
-		s->intreg_pending[cpu] |= 1 << pil;
-	    }
-	    else {
-		s->intreg_pending[cpu] &= ~(1 << pil);
-	    }
-	}
+            if (level) {
+                s->intreg_pending[cpu] |= 1 << pil;
+            }
+            else {
+                s->intreg_pending[cpu] &= ~(1 << pil);
+            }
+        }
     }
     slavio_check_interrupts(s);
 }
@@ -332,7 +343,7 @@ static void slavio_intctl_save(QEMUFile *f, void *opaque)
     int i;
     
     for (i = 0; i < MAX_CPUS; i++) {
-	qemu_put_be32s(f, &s->intreg_pending[i]);
+        qemu_put_be32s(f, &s->intreg_pending[i]);
     }
     qemu_put_be32s(f, &s->intregm_pending);
     qemu_put_be32s(f, &s->intregm_disabled);
@@ -348,7 +359,7 @@ static int slavio_intctl_load(QEMUFile *f, void *opaque, int version_id)
         return -EINVAL;
 
     for (i = 0; i < MAX_CPUS; i++) {
-	qemu_get_be32s(f, &s->intreg_pending[i]);
+        qemu_get_be32s(f, &s->intreg_pending[i]);
     }
     qemu_get_be32s(f, &s->intregm_pending);
     qemu_get_be32s(f, &s->intregm_disabled);
@@ -362,7 +373,7 @@ static void slavio_intctl_reset(void *opaque)
     int i;
 
     for (i = 0; i < MAX_CPUS; i++) {
-	s->intreg_pending[i] = 0;
+        s->intreg_pending[i] = 0;
     }
     s->intregm_disabled = ~0xffb2007f;
     s->intregm_pending = 0;
@@ -385,8 +396,8 @@ void *slavio_intctl_init(uint32_t addr, uint32_t addrg)
         return NULL;
 
     for (i = 0; i < MAX_CPUS; i++) {
-	slavio_intctl_io_memory = cpu_register_io_memory(0, slavio_intctl_mem_read, slavio_intctl_mem_write, s);
-	cpu_register_physical_memory(addr + i * TARGET_PAGE_SIZE, INTCTL_MAXADDR, slavio_intctl_io_memory);
+        slavio_intctl_io_memory = cpu_register_io_memory(0, slavio_intctl_mem_read, slavio_intctl_mem_write, s);
+        cpu_register_physical_memory(addr + i * TARGET_PAGE_SIZE, INTCTL_MAXADDR, slavio_intctl_io_memory);
     }
 
     slavio_intctlm_io_memory = cpu_register_io_memory(0, slavio_intctlm_mem_read, slavio_intctlm_mem_write, s);

@@ -1,0 +1,1556 @@
+			NCR89C105
+		    Chip Specification
+
+Overview
+
+	The NCR89C105 device is designed for use in a low-cost
+single-processor system with an SBus interface.  This chip is meant to
+replave the slave portion of the desktop I/O hardware with a highly
+integrated, low cost and low power part.  The 89C105 integrates two
+dual serial controllers, a high-speed floppy controller, uniprocessor
+interrupt, reset, and counter/timer circuitry, power down control, and
+an external bytewide expandion bus in a single 160 PQFP package.
+
+Features
+
+	The following features are incorporated in the 89C105:
+		- Four NCR85C30 serial ports for keyboard/mouse and
+		  general purpose use, compatible with the AMD AM85C30
+		  rev. C, without extended features.  The TTYA/B
+		  serial ports are fully synchronous, while the
+		  keyboard/mouse ports are asynchronous only.  All
+		  ports support data rates up to 38.4 Kb/s.
+
+		- NCR82077 floppy disk interface compatible with the
+		  Intel 82077AA-1 single-chip floppy controller,
+		  supporting up to 1 Mbit/sec transfer rate.
+
+		- Expansion bus that supports the following byte-wide
+		  peripherals:
+
+			- EPROM
+			- TOD/NVRAM (Mostek 48T02 or 48T08)
+			- Generic 8-bit device
+
+		- Auxiliary I/O registers (used for led, floppy, and
+		  system powerdown)
+
+		- Interrupt Controller for single-processor SBus system
+
+		- System reset control
+
+		- Counter/timers for single-processor SBus system
+
+		- JTAG internal and boundary scan for improved fault
+		  coverage and board testability
+
+Intended Applications
+
+	The 89C105 is intended for uniprocessor SBus machines.  It can
+work with either the Texas Instruments microSPARC processor or the
+Texas Instruments SuperSPARC processor and will also work in any
+SBus-based system.
+
+Related Products
+
+	The 89C105 is designed to share a single SBus slot with the
+NCR89C100.
+
+Chip-Level Address Map
+
+	The various devices and registers in the 89C105 support
+different size accesses.  The address map indicated the allowed
+accesses at each address.  B indicates that a byte access is allowed,
+H indicates a halfword access, W indicates a word access, and D
+indicates a double-word access.
+
+		Chip-level Address Map
+----------------------------------------------------------------------
+|   PA[27:00]   | Device                                    | Access |
+----------------------------------------------------------------------
+| 000 0000 ->   | Boot PROM                                 | B,H,W  |
+|   0FF FFFF    |                                           |        |
+----------------------------------------------------------------------
+| 100 0000 ->   | Keyboard, Mouse, and Serial Ports         | B      |
+|   11F FFFF    |                                           |        |
+|               |                                           |        |
+|  100 0000     | Mouse Control Port                        |        |
+|  100 0002     | Mouse Data Port                           |        |
+|  100 0004     | Keyboard Control Port                     |        |
+|  100 0006     | Keyboard Data Port                        |        |
+|  110 0000     | TTYB Control Port                         |        |
+|  110 0002     | TTYB Data Port                            |        |
+|  110 0004     | TTYA Control Port                         |        |
+|  110 0006     | TTYA Data Port                            |        |
+----------------------------------------------------------------------
+| 120 0000 ->   | TOD/NVRAM                                 | B,H,W  |
+|   12F FFFF    |                                           |        |
+----------------------------------------------------------------------
+| 130 0000 ->   | General Purpose (Generic Port)            | B      |
+|   13F FFFF    |                                           |        |
+----------------------------------------------------------------------
+| 140 0000 ->   | Floppy Controller                         | B      |
+|   14F FFFF    |                                           |        |
+|               |                                           |        |
+|  140 0002     | Digital Output Register (DOR)             |        |
+|  140 0004     | Main Status Register (MSR, Read Only)     |        |
+|  140 0004     | Datarate Select Register (DSR, Write Only)|        |
+|  140 0005     | FIFO                                      |        |
+|  140 0008     | Reserved (Test mode select)               |        |
+|  140 0006     | Digital Input Register (DIR, Read Only)   |        |
+|  140 0007     | Configuration Control Register (CCR,      |        |
+|               | Write Only)                               |        |
+----------------------------------------------------------------------
+| 150 0000 ->   | Reserved                                  |        |
+|   170 0000    |                                           |        |
+----------------------------------------------------------------------
+| 180 0000      | 89C105 Configuration Register             | B      |
+----------------------------------------------------------------------
+| 190 0000 ->   | Auxiliary I/O Registers                   | B      |
+|   19F FFFF    |                                           |        |
+|               |                                           |        |
+|  190 0000     | Aux 1 Register (Miscellaneous System      |        |
+|               | Functions)                                |        |
+|  191 0000     | Aux 2 Register (Software Powerdown        |        |
+|               | Control)                                  |        |
+----------------------------------------------------------------------
+| 1A0 0000      | Diagnostic Message Register               | B      |
+----------------------------------------------------------------------
+| 1B0 0000      | Modem Register                            | B      |
+----------------------------------------------------------------------
+| 1C0 0000 ->   | Reserved                                  |        |
+|   1CF FFFF    |                                           |        |
+----------------------------------------------------------------------
+| 1D0 0000 ->   | Counter/Timers                            | W,D    |
+|   1DF FFFF    |                                           |        |
+|               |                                           |        |
+|  1D0 0000     | Processor Counter Limit Register or User  |        |
+|               | Timer MSW                                 |        |
+|  1D0 0004     | Processor Counter Register or User Timer  |        |
+|               | LSW                                       |        |
+|  1D0 0008     | Processor Counter Limit Register (non-    |        |
+|               | resetting port)                           |        |
+|  1D0 000C     | Processor Counter User Timer Start/Stop   |        |
+|               | Register                                  |        |
+|  1D1 0000     | System Limit Register (Level 10 Interrupt)|        |
+|  1D1 0004     | System Counter Register                   |        |
+|  1D1 0008     | System Limit Register (non-resetting port)|        |
+|  1D1 000C     | Reserved                                  |        |
+|  1D1 0010     | Timer Configuration Register              |        |
+----------------------------------------------------------------------
+| 1E0 0000 ->   | Interrupt Controller                      | W      |
+|   1EF FFFF    |                                           |        |
+|               |                                           |        |
+|  1E0 0000     | Processor Interrupt Pending Register      |        |
+|  1E0 0004     | Processor Clear-Pending Pseudo-Register   |        |
+|  1E0 0008     | Processor Set-Soft-Interrupt Pseudo-      |        |
+|               | Register                                  |        |
+|  1E1 0000     | System Interrupt Pending Register         |        |
+|  1E1 0004     | Interrupt Target Mask Register            |        |
+|  1E1 0008     | Interrupt Target Mask Clear Pseudo-       |        |
+|               | Register                                  |        |
+|  1E1 000C     | Interrupt Target Mask Set Pseudo-Register |        |
+|  1E1 0010     | Interrupt Target Register (Reads as 0,    |        |
+|               | Write has no effect)                      |        |
+----------------------------------------------------------------------
+| 1F0 0000      | System Control/Status Register            | W      |
+----------------------------------------------------------------------
+
+	Reads or writes of reserved addresses and accesses using a
+size that is not valid for the selected address range will result in
+an SBus error acknowledgement.  Other accesses will result in either a
+byte or word acknowledgement, depending on the access.
+
+	The addresses in table 6-7 and elsewhere in this specification
+assume the following address connections: SB_PA[v,w,x,y,z]=PA[24:20],
+and chip_sel_ = PA[27].  Other connections are possible, but the
+address map will be different for the different setups.
+
+Functional Description
+
+	Overview
+
+	The 89C105 consists of five major functional units, plus test
+logic.  Three of the functional units are application specific
+functions (ASF) designed by NCR to replicate the functionality of
+complete board-level chips: the 82077-floppy controller and the 85c30
+serial ports (the 89C105 contains two 85C30 ASFs, one used for
+keyboard/mouse interface and one for general-purpose tty serial
+ports).  The other two functional blocks are the SBus
+interface/interrupt logic and the counter/timers.  The SBus logic
+interfaces between the external world and all functional blocks within
+the 89C105, as well as other devices accessed through the 89C105, such
+as the EPROM and NVRAM.  The counter/timers have a 32/64-bit interface
+(32-bit data input, 64-bit data output to support two word bursts),
+while all of the ASFs and the other devices reside on an 8-bit bus
+expansion bus referred to as the EBus.
+
+	89C100 and 89C105 Interdependencies
+
+	When the 89C100 and the 89C105 are used together, the 89C105
+receives three clocks from the 89C100 (fpy_clk24, fpy_clk32, and
+scc_clk_20).  The 89C100 simply provides oscillator pads on its pins
+because of a pin limitation on the 89C105.  The 89C100 does not use
+these clock signals internally.  The 89C100 also sends its three
+interrupt signals to the 89C105 for processing, they are; sb_d_irq_,
+sb_e_irq_, and sb_p_irq_ for; SCSI, Ethernet, and parallel port
+interrupts, respectively.  Refer to "NCR89C100 Master I/O" for a
+description of how the 89C100 generates interrupts.
+
+	Technology
+
+	The 89C105 is a standard cell design, based on the NCR VS700H
+technology (.95 u drawn, .7 effective).  It consists of 40,000
+equivalent gates.
+
+	Start-Up Information
+
+	The 89C105 provides the system reset function (SBus reset, and,
+optionally, a seperate Memory Controller reset for SuperSPARC-based
+systems).  It takes a reset input indicating that the power supply
+voltage is valid, and produces reset outputs to initialize the system.
+
+	Chip Reset Information
+
+	On start-up, the 89C105 must have its reset input
+(POR_RST_IN_) asserted for at least 15 SBus clocks.  Reset output is
+asserted for the entire time that the reset input is asserted, plus an
+additional reset time intended to guarantee that the various onboard
+oscillators have stabilized and initialization is complete.  The reset
+signals are described below; see the System Status and System Control
+register section for a register-level description of the reset
+function and the timings assosciated with it.
+
+	Processor Status Signals
+
+	Watchdog Resets and Module Error (Level-15) interrupts are
+communicated to the 89C105 (which serves as the system reset and
+interrupt master) via two low-active pins: IU_ERROR_ and MODERR_IRQ_.
+These signals are described in the System Status and System Control
+and Interrupt COntrol functional block descriptions.
+
+	NOTE: The IU_ERROR_ signal is only used by the microSPARC
+	      processor.  In other systems, it should be tied high.
+
+	Buses
+
+	The 89C105 has two bus interfaces: the system SBus and a slow,
+eight-bit expansion bus (EBus) for devices such as EPROM, NVRAM, etc.
+The right-bit bus is called the EBus.
+
+	SBus
+
+	The 89C105 uses the Sbus as its system interface, and conforms
+to SBus Rev B.0.  As allowed in the specification, it only supports a
+subset of SBus functionality.  The description of this subset
+follows.  The chip-level address map lists valid access sizes for each
+address range, and this is described in more detail in each individual
+functional block's section.
+
+	Subset of SBus Features Supported
+
+	The 89C105 supports only slave SBus accesses.  During a slave
+access, the 89C105 takes control of sb_ack[2:0] signals.  Halfword or
+word accesses to the EPROM port will receive an 8-bit acknowledge, so
+the system SBus controller must support dynamic bus sizing.  Burst
+accesses to the EPROM or any other address range other than the
+counter/timers will receive an error acknowledge.  The counter/timers
+will accept two word burst accesses, but only to the User Timer Count
+Register, and only when configured to use the user timer mode of
+operation.
+
+	Table 6-9 represents all possible SBus responses.  The
+89C105's SBus interface can only generate those responses marked with
+a **.  Any access to a reserved section of the 89C105's address space
+or any access that uses a size that is invalid for the address rnage
+accessed will result in an SBus error acknowledgment.
+
+		   Table 6-9 sb_ack Mapping
+----------------------------------------------------------------------
+| sb_ack[2] | sb_ack[1] | sb_ack[0] | Definition                     |
+----------------------------------------------------------------------
+|     1     |     1     |     1     | insert wait states **          |
+----------------------------------------------------------------------
+|     1     |     1     |     0     | error **                       |
+----------------------------------------------------------------------
+|     1     |     0     |     1     | 8-bit port ack **              |
+----------------------------------------------------------------------
+|     1     |     0     |     0     | rerun                          |
+----------------------------------------------------------------------
+|     0     |     1     |     1     | 32-bit port ack **             |
+----------------------------------------------------------------------
+|     0     |     1     |     0     | double-word ack                |
+----------------------------------------------------------------------
+|     0     |     0     |     1     | 16-bit port ack                |
+----------------------------------------------------------------------
+|     0     |     0     |     0     | reserved                       |
+----------------------------------------------------------------------
+
+	Eight-Bit Bus (EBus)
+
+	The EBus supports 8-bit "Intel-style" peripherals, with
+interface controls (chip select, read, write) that operate similarly
+to peripheral chips manufactured by the Intel Corporation (see the
+Timing Diagrams section for typical EBus cycle diagrams).  Write
+accesses are single buffered in order to reduce SBus overhead.  This
+means that the 89C105 will acknowledge SBus write accesses
+immediately, before completing the corresponding EBus cycle.  Note
+that a second write immediately following the first has to wait for
+that first EBus cycle to complete (and the single write buffer to
+become available) before the 89C105 will acknowledge it and free the
+SBus.  The Timing Diagrams section shows several examples of this
+write buffering.
+
+	Devices Residing on the EBus
+
+	The following devices reside on the EBus:
+
+		- EPROM
+		- TOD/NVRAM
+		- Floppy Controller
+		- Serial Controller A
+		- Serial Controller B
+		- Keyboard Controller
+		- Mouse Controller
+		- General Purpose Decode (Generic port)
+
+Functional Blocks
+
+	This section includes block diagrams, functional descriptions,
+and block-level address maps for the following:
+
+	- Boot PROM
+	- TOD/NVRAM
+	- Floppy Controller
+	- Generic Port
+	- Serial Controller
+	- Keyboard/Mouse Controller
+	- System Status and System Control
+	- Interrupt Control
+	- Counter-Timers
+	- Chip Configuration Control
+	- Diagnostic Message Register
+	- Miscellaneous System Functions (Aux I/O Modem Registers)
+
+Overview
+
+	The 89C105 consists of several major functional blocks:
+eight-bit devices (both external devices residing on the EBus and
+internal ASFs), an interrupt controller, a set of counter-timers, a
+system status and control block that generates system resets, and
+miscellaneous other system configuration registers.  Each of these
+blocks is described in detail below.
+
+External Eight-Bit Devices
+
+	The following devices reside on the external EBus: EPROM,
+TOD/NVRAM.  In addition, the 89C105 provides a general purpose decode
+(Generic Port) for other eight-bit devices.
+
+	Boot Prom
+
+	The Boot PROM contains start-up information that gets accessed
+immediately after any reset.
+
+	Boot PROM Address Map
+
+	The Boot PROM is located at the following address as shown in
+Table 6-12:
+
+		Table 6-12 Boot PROM Address Map
+----------------------------------------------------------------------
+|      PA[27:00]      | Device                             |   R/W   |
+----------------------------------------------------------------------
+| 000 0000 - 0FF FFFF | Boot PROM                          |    R    |
+----------------------------------------------------------------------
+
+	An external chip select (eprom_cs_) is generated for transfers
+from this device.  When an SBus read addressed to the EPROM space is
+detected, the chip select is asserted, and data is transferred from
+the PROM to the 8-bit expansion bus.  The 89C105 passes this data
+through to the SBus and asserts sb_ack_ to end the transfer.  The
+89C105 will only assert a byte acknowledge, so it relies on the SBus
+controller for bus sizing for halfword or word transfers.  If a burst
+transfer is attempted to this address range, the 89C105 will return an
+error acknowledge.
+
+	TOD/NVRAM
+
+	The Time-of-Day clock/Non-Volatile RAM port is designed to
+support either a Thomson Mostek MK48T02 (2K NVRAM) or MK48T08 (8K
+NVRAM).
+
+	TOD/NVRAM Address Map
+
+	The Time-of-Day/Non-Volatile RAM have the address maps shown
+in Table 6-13 and Table 6-14:
+
+		Table 6-13 TOD/NVRAM (MK 48T02) Address Map
+----------------------------------------------------------------------
+|      PA[27:00]      | Device                             |   R/W   |
+----------------------------------------------------------------------
+| 120 0000 - 120 07F7 | NVRAM (see software document)      |   R/W   |
+----------------------------------------------------------------------
+|       120 07F8      | TOD Control                        |   R/W   |
+----------------------------------------------------------------------
+|       120 07F9      | Seconds (00-59)                    |    R    |
+----------------------------------------------------------------------
+|       120 07FA      | Minutes (00-59)                    |    R    |
+----------------------------------------------------------------------
+|       120 07FB      | Hour (00-23)                       |    R    |
+----------------------------------------------------------------------
+|       120 07FC      | Day (01-07)                        |    R    |
+----------------------------------------------------------------------
+|       120 07FD      | Date (00-31)                       |    R    |
+----------------------------------------------------------------------
+|       120 07FE      | Month (01-12)                      |    R    |
+----------------------------------------------------------------------
+|       120 07FF      | Year (00-99)                       |    R    |
+----------------------------------------------------------------------
+
+		Table 6-14 TOD/NVRAM (MK 48T08) Address Map
+----------------------------------------------------------------------
+|      PA[27:00]      | Device                             |   R/W   |
+----------------------------------------------------------------------
+| 120 0000 - 120 1FF7 | NVRAM (see software document)      |   R/W   |
+----------------------------------------------------------------------
+|       120 1FF8      | TOD Control                        |   R/W   |
+----------------------------------------------------------------------
+|       120 1FF9      | Seconds (00-59)                    |    R    |
+----------------------------------------------------------------------
+|       120 1FFA      | Minutes (00-59)                    |    R    |
+----------------------------------------------------------------------
+|       120 1FFB      | Hour (00-23)                       |    R    |
+----------------------------------------------------------------------
+|       120 1FFC      | Day (01-07)                        |    R    |
+----------------------------------------------------------------------
+|       120 1FFD      | Date (00-31)                       |    R    |
+----------------------------------------------------------------------
+|       120 1FFE      | Month (01-12)                      |    R    |
+----------------------------------------------------------------------
+|       120 1FFF      | Year (00-99)                       |    R    |
+----------------------------------------------------------------------
+
+	A chip select pin (tod_cs) is used to select the chip so that
+data can be transferred to or from the 8-bit expansion bus under
+control of the EBUS data direction signals (eb_wr_, eb_rd_).  The
+89C105 will only assert a byte acknowledge, so it relies on the SBus
+controller for bus sizing for halfword or word transfers.  If a burst
+transfer is attempted to this address range, the 89C105 will return an
+error acknowledge.
+
+	Generic Port
+
+	The 89C105 can support additional Intel-stlye peripheral
+devices on the external EBus through the Generic Port.  This port
+provides an additional chip select (which can be externally qualified
+with additional SBus address bits if desired).  The length of the
+read/write cycles is programmable through the generic_rdy_ signal.
+The cycles will last two SBus clocks after the generic_rdy_ signal is
+sampled low.  See the Functional Operation and TIming Diagrams
+sections for more details on the Generic Port timing.
+
+	SBus writes to the Generic Port are buffered, like all EBus
+writes (see the Functional Operation section for details).  If a
+generic_rdy_ is not received after 15 SBus clocks, writes are
+terminated, and reads will return an error acknowledge (since the EBus
+is buffered, a valid acknowledge would already have been given for a
+write).  See the Timing Diagrams section for an example of a Generic
+time-out.
+
+Internal Eight-bit Devices
+
+	The 89C105 contains three internal eight-bit devices: a floppy
+disk controller, a serial communications controller, and a
+keyboard/mouse controller.
+
+	Floppy Controller
+
+	The NCR82077 floppy disk controller is compatible with the
+Intel 82077AA-1 single-chip floppy disk controller.  For detailed
+information on the NCR82077, refer to the "NCR82077 Floppy Disk
+Controller Core" section of this manual.  In the 89C105, this floppy
+controller can be used slightly differently than the standard (PC/AT)
+setup.  Details are shown below.
+
+	Floppy Controller Address Map
+
+	The sub-addresses for the floppy controller are shown in
+Table 6-15.
+
+		Table 6-15 Floppy Controller Address Map
+----------------------------------------------------------------------
+|      PA[27:00]      | Device                             |   R/W   |
+----------------------------------------------------------------------
+|      140 00002      | Digital Output Register (DOR)      |   R/W   |
+----------------------------------------------------------------------
+|      140 00004      | Main Status Register (MSR)         |    R    |
+----------------------------------------------------------------------
+|      140 00004      | Data Rate Select Register (DSR)    |    W    |
+----------------------------------------------------------------------
+|      140 00005      | Data FIFO                          |   R/W   |
+----------------------------------------------------------------------
+|      140 00006      | RESERVED (test mode)               |    R    |
+----------------------------------------------------------------------
+|      140 00007      | Digital Input Register (DIR)       |    R    |
+----------------------------------------------------------------------
+|      140 00007      | Configuration Control Register     |    W    |
+|                     | (CCR)                              |         |
+----------------------------------------------------------------------
+
+	Floppy Controller Use
+
+	In the 89C105, the 82077 floppy controller is used in a fairly
+unique way.  All data is transferred using interrupt-driven programmed
+I/O instead of the more standard DMA setup.  This requires that the
+Terminal Count bit be set under software control (see the AuxIO
+register description for more details).  In addition, the floppy disk
+interface is tailored to use a non-standard floppy drive that supports
+three density modes (720 KB, 1.2 MB, 1.44 MB) and has an auto-eject
+feature.  To support this drive, some pins on the ASF, which are
+controlled by way of the DOR are assigned new functions.  In addition,
+a bit in the Aux I/O Registers is used to sense the floppy density.
+The INVERTb pin of the floppy controller is tied low internal to the
+89C105.  Because of this, all of the pins which connect to the floppy
+drive have low polarity.
+
+	-------------------------------------------
+	|    |     |   |     | ___ | ___ |   | __ |
+	| EJ | DEN | 0 | MOT | DMA | RST | 0 | DS |
+	-------------------------------------------
+	  7     6    5    4     3     2    1   0
+
+	 Figure 6-5 DOR Register Field Definitions
+
+
+	Field Definitions
+		0	DOR[5,1] are unused.  They should be masked
+			and ignored on read, and written as 0.
+
+	       EJ	EJECT.  To eject the floppy, write a 1, pause
+			for at least 2us, and then write a 0.  The
+			drive must be selected and the motor on for
+			this to work.
+
+	       DEN	DENSITY SELECT.  This controls the FPY_DENSEL
+			pin (that pin is an inverted version of this
+			register bit).  For the Sony MP-F17W-P1 drive,
+			this yields the following density selection:
+
+   Table 6-16 Floppy Density Select Operation (Sony MP-F17W-P1 only)
+----------------------------------------------------------------------
+| Disk | Density Select |         Drive Status         | Motor Speed |
+----------------------------------------------------------------------
+| 2DD  |        X       | 1.0MB (720K formatted)       | 300 RPM     |
+----------------------------------------------------------------------
+| 2HD  |        0       | 2.0MB (1.44MB formatted)     | 300 RPM     |
+----------------------------------------------------------------------
+| 2HD  |        1       | 1.6MB (1.2MB formatted)      | 360 RPM     |
+----------------------------------------------------------------------
+
+	       MOT	MOTOR ENABLE.  Setting this to 1 turns on the
+			floppy drive's motor.
+                        _______
+	       DMA      DMAGATE.  This must be set to 1 after system
+			reset to allow floppy interrupts to be seen by
+			the rest of the system.
+                        _____
+	       RST	RESET.  This must be set to 1 after system
+			reset to bring the floppy ASF out of reset.
+                        ____________
+	        DS	DRIVE SELECT.  This must be set to 0 to select
+			the floppy drive.
+
+	All bits in the DOR register are cleared to 0 by a system reset.
+
+	Floppy Drives Supported
+
+	The 89C105 floppy controller is compatible with any PC-style
+floppy drive that uses MFM encoding (typically 720K and 1.44M
+floppies).  It is also compatible with the extra high density (2.88MB
+formatted) floppy drives that use the Perpendicular Mode recording
+format.  In a system with a heavily loaded SBus, the interrupt latency
+in a workstation has been found too long in many cases to allow
+operation at the EHD data rates.  This will vary depending on the
+system being designed.
+
+	Serial Controller
+
+	The serial port controller used for the general-purpose TTY
+serial ports is compatible with the AMD AM85C30, rev C Serial
+Communications Controller.  All registers are 8-bit quantities.
+
+	The serial ports' input clock (PCLK) is 1/4 of the SERIAL_CLK
+input pin (the input is internally divided by 4).  On typical systems,
+the SERIAL_CLK input should be driven with a 19.66 MHz clock, which
+means that PCLK runs at 4.9152 MHz.
+
+	Differences from AMD AM85C30 SCC
+
+	The NCR 85c30 ASF is functionally compatible with the AMD
+AM85C30 rev C, with the exception of the enhancements to WR7 and the
+10x19 SDLC frame status FIFO.  These functions, are not included in
+the 89C105 serial ports.
+
+	Serial Controller Address Map
+
+	The sub-addresses for the SCCs are as shown in Table 6-17:
+
+	Table 6-17 Serial Controller Address Map
+----------------------------------------------------------------------
+|      PA[27:00]      | Device                             |   R/W   |
+----------------------------------------------------------------------
+|      110 0000       | TTYB Control Port                  |   R/W   |
+----------------------------------------------------------------------
+|      110 0002       | TTYB Data Port                     |   R/W   |
+----------------------------------------------------------------------
+|      110 0004       | TTYA Control Port                  |   R/W   |
+----------------------------------------------------------------------
+|      110 0006       | TTYA Data Port                     |   R/W   |
+----------------------------------------------------------------------
+
+	Keyboard/Mouse Controller
+
+	The serial port controlled used for the keyboard/mouse ports
+is compatible with the AMD AM85C30, rev C Serial Communications
+Controller.  All registers are 8-bit quantities.
+
+	The keyboard/mouse controller runs at the same PCLK rate as
+the serial controller.
+
+	Differences from AMD AM85C30 SCC
+
+	The 89C105 uses a reduced-function asynchronous only cell for
+the keyboard/mouse in order to conserve chip area.  All synchronous
+logic has been removed, as well as some of the async modes not
+commonly used by drivers.  Specific functions that were removed were:
+PLL, monosync/bisync/SDLC rx/tx circuitry, and any clocking mode (in
+WR4) except x16.
+
+	Keyboard/Mouse Controller Address Map
+
+	The sub-addresses for the keyboard/mouse controller are as
+shown in Table 6-18:
+
+	  Table 6-18 Keyboard/Mouse Controller Address Map
+----------------------------------------------------------------------
+|      PA[27:00]      | Device                             |   R/W   |
+----------------------------------------------------------------------
+|      100 0000       | Mouse Control Port                 |   R/W   |
+----------------------------------------------------------------------
+|      100 0002       | Mouse Data Port                    |   R/W   |
+----------------------------------------------------------------------
+|      100 0004       | Keyboard Control Port              |   R/W   |
+----------------------------------------------------------------------
+|      100 0006       | Keyboard Data Port                 |   R/W   |
+----------------------------------------------------------------------
+
+	System Status and System Control
+
+	The System Status and System Control Register is at physical
+address 1F0 0000.  It is used to generate "software" system resets and
+to indicate reset sources for diagnostic purposes.
+
+	System Status and System Control Register (Reset Register)
+
+	------------------------------------------------------------
+	|                  (R)            | WD |   (R)   | RS | SR |
+	------------------------------------------------------------
+	 31                            05   04   03   02   01   00
+
+		Figure 6-6 System Reset (Control) Register
+
+	Field Definitions:
+
+		SR	Software Reset (write-only).  When set to 1,
+			generates the equivalent of a power-on reset.
+			This is self-clearing logic, so it will always
+			read a 0.
+
+		RS	Reset Status (read/clear only).  This bit is
+			set to 1 after a software reset has been
+			issued.  It is cleared on a power-on reset.
+
+		(R)	Reserved.  These bits read as 0; writing has
+			no effect.
+
+		WD	Watchdog Reset (read/clear only).  This bit is
+			set to 1 when a Watchdog Reset request is
+			received from the processor via the iu_error_
+			input, as discussed in the Reset section
+			following. It is cleared by either a power-on
+			or software reset, or by writing a 0 to this
+			bit.  Writing a 1 has no effect.
+
+	This circuit requires that the hardware reset input be
+asserted on power-up to properly initialize the system during
+power-up.  The SYS_RST_OUT_ pin will be asserted as long as the
+POR_RST_IN_ reset input is asserted, plus an additional 200
+milliseconds or so.  The circuit will de-assert SYS_RST_OUT_
+synchronous to the rising edge of SBus clock, as defined by the SBus
+specification.
+
+	Resets
+
+	There are two sources of reset recognized by the I/O reset
+controller: Power-on Reset (POR), and Software Reset (SWR).  EIther of
+these two sources will cause the 89C105 to assert its two reset
+outputs, SYS_RST_OUT_ (SBus reset), and MMC(RST_OUT_ (Memory
+Controller Reset--SuperSPARC systems only).  Both the length of the
+reset pulse and the value left in the System Reset Register will
+differ depending on the source of the reset.  The lengths of the reset
+pulses are as follows:
+
+		Table 6-19 Hardware and Software Resets
+----------------------------------------------------------------------
+| Reset Source |       Sbus Reset        |  Memory Controller Reset  |
+|              | (SYS_RST_OUT) Duration  | (MMC_RST_OUT_) Duration   |
+----------------------------------------------------------------------
+| POR_RST_IN_  | > 200 milliseconds      | > 200 milliseconds        |
+|              | (starting after         | (starting after           |
+|              |  POR_RST_IN_ = 1)       |  POR_RST_IN_ = 1)         |
+----------------------------------------------------------------------
+| Soft Reset   | 66 Sbus clocks + 2 10   |                           |
+|              | MHz clocks + 3.2e-5     | 4 SBus clocks             |
+|              | seconds (approx)        |                           |
+----------------------------------------------------------------------
+
+
+	The software reset duration given above yields the following
+durations for SYS_RST_OUT_ (SBus reset) at each SBus frequency:
+
+	   Table 6-20 SYS_RST_OUT_ Software Reset Duration
+----------------------------------------------------------------------
+|        16 MHz        |       20 MHz        |         25 MHz        |
+----------------------------------------------------------------------
+| 36.2 usec (603 SBus  | 35.5 usec (710 SBus | 34.8 usec (871 SBus   |
+| clocks)              | clocks)             | clocks)               |
+----------------------------------------------------------------------
+
+	These numbers are somewhat approximate due to synchronization
+between two asynchronous clocks that takes place in the process of
+generating the reset pulse.  This can cause the numbers above to be
+off by several SBus clocks in one direction or the other.
+
+	The reset output SYS_RST_OUT_, controller by the 89C105, is
+intended to put the entire system into a known state.  The system
+processor as well as all I/O devices and state machines will be
+reset.  It is not possible to reset part of the system and leave the
+rest untouched via either of these two resets.
+
+	In addition to the above sources, the processor may detect a
+Watchdog Reset if it experiences an error condition, which is trap
+with traps disabled.  This condition is communicated to the 89C105 via
+the IU_ERROR_ input, and is latched in the System Reset Register (no
+other action is taken by the 89C105; the processor has its own
+watchdog reset circuitry that performs the partial watchdog reset).
+
+	When the processor recovers from a reset, it should determine
+the source of the reset.  The hierarchy it should search for this
+determination is watchdog, SWR, then POR.
+
+		Table 6-21 Processor State after POR/SWR
+----------------------------------------------------------------------
+| Device, Bus, or Bit             | State After POW/SWR              |
+----------------------------------------------------------------------
+| SBus                            | Reset                            |
+----------------------------------------------------------------------
+| Interrupt Mask                  | All '1' (all sources masked)     |
+----------------------------------------------------------------------
+| Interrupt Target Register       | 0x0                              |
+----------------------------------------------------------------------
+| Soft-Interrupt Bits             | All '0'                          |
+----------------------------------------------------------------------
+| System Error Bits               | All '0'                          |
+----------------------------------------------------------------------
+| Counter Timers                  | Initialized                      |
+----------------------------------------------------------------------
+
+	Any reset source will cause the 89C105 to assert SYS_RST_OUT_
+for a minimum of 512 SBus clocks.
+
+	Processor Status Pins
+
+	Watchdog Resets and Module Error (Level-15) interrupts are
+communicated to the 89C105 (whichs erves as the system reset and
+interrupt master) via two low-active pins: IU_ERROR_ and MODERR_IRQ_.
+These signals allow the processor to indicate the following
+conditions:
+
+		Table 6-22 Processor Status Codes
+----------------------------------------------------------------------
+| moderr_irq_ | iu_error | Definition                                |
+----------------------------------------------------------------------
+|      1      |     1    | Normal Operation                          |
+----------------------------------------------------------------------
+|      0      |     1    | Module Error (Level-15) Int Request       |
+----------------------------------------------------------------------
+|      1      |     0    | Watchdog Reset Indicator                  |
+----------------------------------------------------------------------
+|      0      |     0    | Both Module Error Interrupt and Watchdog  |
+----------------------------------------------------------------------
+
+
+Interrupt Control
+
+	The 89C105 contains an interrupt controller designed for use
+in uniprocessor systems.  It contains the system logic and a single
+set of processor-specific circuitry.
+
+	Interrupt Control Register Definitions
+
+	The Interrupt Control Registers are at physical address
+1E0 0000.  They are defined as follows:
+
+	   Table 6-23 Interrupt Control Register Definitions
+----------------------------------------------------------------------
+|      PA[27:00]      | Device                             |   R/W   |
+----------------------------------------------------------------------
+|      1E0 0000       | Processor Interrupt Pending        |    R    |
+----------------------------------------------------------------------
+|      1E0 0004       | Processor Clr_Pnd Pseudo-Reg       |    W    |
+----------------------------------------------------------------------
+|      1E0 0008       | Processor Set_Soft_Int Pseudo-Reg. |    W    |
+----------------------------------------------------------------------
+| 1E0 000C - 1E0 3FFF | RESERVED                           |   N/A   |
+----------------------------------------------------------------------
+|      1E1 0000       | System Interrupt Pending Reg.      |    R    |
+----------------------------------------------------------------------
+|      1E1 0004       | Interrupt Target Mask Register     |    R    |
+----------------------------------------------------------------------
+|      1E1 0008       | Interrupt Target Mask Clear Pseudo-|    W    |
+|                     | Reg.                               |         |
+----------------------------------------------------------------------
+|      1E1 000C       | Interrupt Target Mask Set Pseudo-  |    W    |
+|                     | Reg.                               |         |
+----------------------------------------------------------------------
+| 1E1 0010 - 1EF FFFF | RESERVED                           |    W    |
+----------------------------------------------------------------------
+
+	Reading and writing the System Interrupt Pending/Mask register
+allows the CPU to identify hardware interrupt sources, and to
+selectively mask those sources, as follows:
+
+	One must write/read zeroes to/from reserved bits.
+
+----------------------------------------------------------------------
+|         SOFTINT[15:1]          | 0 |      HARDINT[15:1]        | 0 |
+----------------------------------------------------------------------
+  31                          17   16   15                    01   00
+
+	Figure 6-8 Processor Interrupt Pending Register (read only)
+
+----------------------------------------------------------------------
+|         SOFTINT[15:1].CLR      | 0 | IC |               0          |
+----------------------------------------------------------------------
+  31                          17   16  15   14                     00
+
+ Figure 6-9 Processor Interrupt Clear-Pending Register Pseudoregister
+
+----------------------------------------------------------------------
+|         SOFTINT[15:1].SET      |           Reserved                |
+----------------------------------------------------------------------
+  31                          17   16                              00
+
+	   Figure 6-10 Processor Set-Soft-Int Pseudoregister
+
+	Field Definitions:
+
+	SOFTINT[15:1]	Software Interrupt.
+	HARDINT[15:1]	Hardware Interrupt.
+	     IC		Interrupt Level 15 Clear.
+
+	Writing a 1 to any of the SOFTINT bits or the IC bit in the
+Interrupt Clear pseudoregister clears the associated interrupt.
+
+	The Software Interupt Set register is used to generate
+software interrupts.  Writes to a given bit in this register will
+cause the associated bit to be set in the Pending register, and the
+appropriate level interrupt request will be issued to the CPU.
+
+	All pending interrupts are CLEARED, and all mask bits are SET
+upon system reset.
+
+----------------------------------------------------------------------
+| (R) | ME | I* | M* | (R) | F | (R) | V* | T | SC | (R) | E | S | K |
+----------------------------------------------------------------------
+  31    30   29   28  27 23  22   21   20   19  18   17    16  15  14
+---------------------------
+| SBusIrq[7:1] | Reserved |
+---------------------------
+  13         07 06      00
+
+		Figure 6-11 System Interrupt Pending Register
+
+---------------------------------------------------------------------
+| MA | ME | I* | M* | (R) | F | (R) | V* | T | SC | (R) | E | S | K |
+---------------------------------------------------------------------
+  31   30   29   28  27 23  22  21    20   19  18   17    16  15  14
+
+---------------------------
+| SBusIrq[7:1] | Reserved |
+---------------------------
+ 13          07 06      00
+
+	Figure 6-12 System Interrupt Target Mask Register (Read Only),
+	    and Mask Set and Mask Clear Registers (Write Only)
+
+	Field Definitions:
+
+		MA	Mask All interrupts.  Writing a 1 disables all
+			interrupts.
+
+		ME	Module Error (asynchronous fault)
+
+		I*	MSI (MBus-SBus Interface) interrupt
+
+		M*	EMC (ECC Memory Controller) interrupt
+
+		F	Floppy interrupt
+
+		T	Level 10 Counter/Timer
+
+		V*	Video Interrupt
+
+		SC	SCSI interrupt
+
+		E	Ethernet interrupt
+
+		S	Serial Port interrupt
+
+		K	Keyboard/Mouse interrupt
+
+		SBus	Gives a direct indication of which SBus level
+			interrupts are active.
+
+		(R)	Reserved- Read as 0s, writing has no effect.
+
+	* These bits are only active in SuperSPARC mode; when the
+89C105 is in microSPARC mode (set via the configuration register),
+these System Interrupt Pending Register bits will always read as 0 and
+the corresponding System Interrupt Target Mask Register bits will have
+no effect (though writing the set/clear bits will still update the
+Mask register).
+
+	The Interrupt Target Mask Register occupies three addresses,
+one for reading the current state of the interrupt mask, and one each
+for setting and clearing mask bits.  Writing a 1 to any defined bit
+field in the Mark Set register will disable that interrupt, and
+writing a 1 to the same field in the Mask Clear register will
+re-enable it.  Interrupts are cleared by disabling and then
+re-enabling them.  All pending interrupts are cleared, and all mask
+bits are set upon system reset.
+
+	The Mask All bit allows masking of Level 15 interrupts
+(considered non-maskable by SPARC definition) allowing the boot
+firmware to establish a basic environment before receiving any such
+interrupts.
+
+	Interrupt Assignment and Priority
+
+	There are 15 levels of software-generated and/or externally
+generated interrupts supported by the 89C105 interrupt controller.
+Assignment and prioritiziation of these interrupts is performed by the
+interrupt logic.  Interrupt assignments are as follows:
+
+		Table 6-24 Interrupt Level Assignments
+----------------------------------------------------------------------
+| Level | Sources                                                    |
+----------------------------------------------------------------------
+|   0   | No Interrupts pending                                      |
+----------------------------------------------------------------------
+|   1   | SOFTINT.1                                                  |
+----------------------------------------------------------------------
+|   2   | SOFTINT.2, SBus L1                                         |
+----------------------------------------------------------------------
+|   3   | SOFTINT.3, SBus L2, Parallel port                          |
+----------------------------------------------------------------------
+|   4   | SOFTINT.4, SCSI                                            |
+----------------------------------------------------------------------
+|   5   | SOFTINT.5, SBus L3                                         |
+----------------------------------------------------------------------
+|   6   | SOFTINT.6, Ethernet                                        |
+----------------------------------------------------------------------
+|   7   | SOFTINT.7, SBus L4                                         |
+----------------------------------------------------------------------
+|   8   | SOFTINT.8, Video                                           |
+----------------------------------------------------------------------
+|   9   | SOFTINT.9, SBus L5                                         |
+----------------------------------------------------------------------
+|   10  | SOFTINT.10, System Counter/Timer                           |
+----------------------------------------------------------------------
+|   11  | SOFTINT.11, SBus L6, Floppy                                |
+----------------------------------------------------------------------
+|   12  | SOFTINT.12, Keyboard/Mouse, Serial Ports                   |
+----------------------------------------------------------------------
+|   13  | SOFTINT.13, SBus L7                                        |
+----------------------------------------------------------------------
+|   14  | SOFTINT.14, Processor Counter/Timer                        |
+----------------------------------------------------------------------
+|   15  | SOFTINT.15, Asynchronous HW Errors                         |
+----------------------------------------------------------------------
+
+Counter-Timers
+
+	The 89C105 features two programmable counter/timer channels,
+designed to provide a system timer and a single processor-specific set
+of timers.  The System Counter is a 22-bit counter dedicated to the
+system timer function, and generates a level-10 interrupt upon
+time-out.  The Processor Counter can be configured to behave as a
+22-bit timer that generates a level-14 interrupt upon time-out, or to
+provide a real-time 54-bit counter for high-resolution user
+performance analysis.
+
+	In the first mode, the timer is useful for OS kernel
+profiling.  In the second mode, the timer can be loaded upon each
+entry into user mode, and saved on each exit.  By mapping the counter
+as read-only for the user process, it provides "virtual" time, a
+measure of the context run time, which is useful for measuring
+application performance.  It could also be loaded with a binary real
+time, which will then track precisely with the time-of-day.
+
+	Counter-Timers Address Map
+
+	Counter/timer control registers are mapped as follows:
+
+		Table 6-25 Counter/Timer Address Map
+----------------------------------------------------------------------
+|      PA[27:00]      | Register                           |   R/W   |
+----------------------------------------------------------------------
+|      1D0 0000       | Processor Counter Limit Register or|   R/W   |
+|                     | User Timer MSW                     |         |
+----------------------------------------------------------------------
+|      1D0 0004       | Processor Counter Register or User |   R/W1  |
+|                     | Timer LSW                          |         |
+----------------------------------------------------------------------
+|      1D0 0008       | Processor Counter Limit Register   |    W    |
+|                     | (non-resetting port)               |         |
+----------------------------------------------------------------------
+|      1D0 000C       | Processor Counter User Timer Start/|   R/W   |
+|                     | Stop Register                      |         |
+----------------------------------------------------------------------
+|      1D1 0000       | System Limit Register (Level 10    |   R/W   |
+|                     | Interrupt)                         |         |
+----------------------------------------------------------------------
+|      1D1 0004       | System Counter Register            |    R    |
+----------------------------------------------------------------------
+|      1D1 0008       | System Limit Register (non-        |    W    |
+|                     | resetting port)                    |         |
+----------------------------------------------------------------------
+|      1D1 000C       | RESERVED                           |   N/A   |
+----------------------------------------------------------------------
+|      1D1 0010       | Timer Configuration Register       |   R/W   |
+----------------------------------------------------------------------
+		1. Can be written as User Timer LSW, read-only
+		   as Counter Register.
+
+	These addresses are associated with each counter:  a counter
+register, a limit register and a pseudoregister that allows the limit
+to be loaded without resetting the count.  The count and limit
+registers have the following format:
+
+----------------------------------------------------------------------
+| L |            Count[21:00]             |           Reserved       |
+----------------------------------------------------------------------
+ 31   30                                9   8                     00
+
+	Figure 6-14 System Counter Register Field Definitions
+
+	Field Definitions:
+
+		L	Limit Reached
+
+	    Reserved	Read as 0
+
+	     Count	Current system count value
+
+	Each counter increments by one in bit position 9 every 500
+nanoseconds.  When a counter reached the value in its corresponding
+limit register, it is reset to 500ns (i.e. 0x00000200), the
+limit-reached bit in both the counter and the limit registers is set,
+and an interrupt is generated (if enabled) at Level 10 for the System
+Counter and level 14 for the Processor Counter.
+
+	The interrupt is cleared and the limit bits reset by reading
+the appropriate limit register.  Reading the counter register does not
+change the state of the limit bit.  Writing the limit register resets
+the corresponding counter to 500nS (0x200).
+
+	The limit register can be loaded via the pseudoregister
+without resetting th count.  If the count value is already higher
+than the new limit, the counter will proceed to count to its maximum
+value, then reset and count up to the new limit value before
+generating an interrupt.  This allows alarm clock, rather than
+time-tick usage of the counter.
+
+	Setting the limit register to 0 causes the corresponding
+counter to free-run.  Interrupts will be generated when the counter
+overflows, approximately every two seconds.  All bits in all count and
+limit registers are cleared to 0 on reset.
+
+----------------------------------------------------------------------
+| R |                Limit[21:00]                   |    Reserved    |
+----------------------------------------------------------------------
+ 31   30                                          9   8           00
+
+	Figure 6-15 Counter/Timer Limit Register Field Definitions
+
+	Field Definitions:
+
+	 R, Reserved	Reserved, read as 0.
+
+	   Limit	Limit value to count to before setting
+			interrupt and resetting counter.
+
+----------------------------------------------------------------------
+| L |                Count[53:00]                   |    Reserved    |
+----------------------------------------------------------------------
+ 63   62                                          9   8           00
+
+	Figure 6-16 User Timer Count Register Field Definitions
+
+	Field Definitions:
+
+		L	Limit Reached
+
+	   Reserved	Read as 0
+
+	     Count	Current count value
+
+	When the Processor Counter is configured to be a User Timer,
+it should be accessed only as a 64-bit word (to insure consistency
+between the LS- and MS- words).  Althought the counter is read/write,
+it is recommended that it be mapped read-only for user-mode access.
+The Limit bit is set any time the counter exceeds the maximum count
+value, and is cleared on any write to the register.
+
+	There is no interrupt associated with operation of the
+Processor Counter in User Timer Mode.
+
+----------------------------------------------------------------------
+|                Reserved                                    |  Run  |
+----------------------------------------------------------------------
+  31                                                       1     00
+
+	Figure 6-17 User Timer Start/Stop Register Field Definitions
+
+	Field Definitions:
+
+	       Run	When set to 1, counting is enabled.  When 0,
+			frozen.
+
+	  R, Reserved	Read as 0
+
+	The User Timer Start/Stop Register is provided to allow fast
+trap handlers to stop the User Timer blindly during time-critical
+code, without the necessity of reading and saving the count value.
+The time must be restarted before reentering user state.  A software
+flag must be maintained to indicate if the UT is in use, so that a
+fast trap handler can know that it must be restarted.  This register
+has no effect if the Processor Counter is configured as a counter.
+All bits cleared to 0 on reset.
+
+----------------------------------------------------------------------
+|               Reserved                                      |  T0  |
+----------------------------------------------------------------------
+  31                                                       01    00
+
+   Figure 6-18 Counter/Timer Configuration Register Field Definitions
+
+	Field Definitions:
+
+		T0	When set to 1, the Processor Counter is
+			configured as a User Timer.
+
+	   R, Reserved	Read as 0.
+
+	Note that the System Counter cannot be configured as a User
+Timer.  All bits are cleared to 0 on reset.
+
+Chip Configuration Control
+
+	The 89C105 has several software-programmable options
+controlled by its configuration register.  This register is located at
+address 180 000.
+
+		------------------------------------
+		|     (R)      | I | P | D | M | S |
+		------------------------------------
+		  7     6    5   4   3   2   1   0
+
+    Figure 6-19 The 89C105 Configuration Register Field Definitions
+
+	Field Definitions:
+
+		(R)	These bits are unused.  They read as 0;
+			writing has no effect.
+
+		I	Modem Ring Indicate Interrupt Enable.  When
+			set to 1, the modem RI interrupt generation is
+			activated (see also bit 1, and the description
+			of the Modem Register).  When cleared, no
+			modem interrupt will be generated, regardless
+			of the state of the M bit or the MSI_IRQ_ input.
+
+		P	Power Fail Detect Enable.  When set to 1, a
+			low on the PFD_ input will cause a module
+			error (level 15) interrupt. The interrupt is
+			visible (and clearable) in AuxIO register 2.
+			When clear the PFD_ input is ignored.
+
+		D	Density Select SOurce (1 = 82077 density
+			select; 0 = 82077 motor enable #2).  This bit
+			determines which signal drives the external
+			density select pin (FPY_DENSEL).  For the Teac
+			tri-density (sw selectable) drive, this should
+			be set to 0; for a standard PC drive (using an
+			external 25-pin floppy cable) it should be set
+			to 1, so that the 82077 can automatically
+			control density selection between single and
+			double density.
+
+		M	Modem Ring Select.  This bit demuxes the
+			MSI_IRQ_ input pin, to select whether it
+			functions as a level 15 interrupt input from
+			the MSI, or a modem ring indicator.  When this
+			bit is set to 1, alow on the MSI_IRQ_ input
+			will cause a level 15 MSI interrupt.  When it
+			is cleared, a transition will cause a modem
+			ring indicate interrupt (SBus level 5).
+			Either a high or low transition can cause an
+			interrupt in this mode, depending on the Edge
+			Select bit in the Modem Register.  The
+			interrupt request is visible (and clearable)
+			in the Modem Register.  The unused input will
+			be held in its inactive state.
+
+		S	SuperSPARC mode (1 = SuperSPARC, 0 =
+			microSPARC).  This bit determines the function
+			of several muxed input pins (the 89C105 is
+			extremely pin limited, so pins were not
+			available to support all functions
+			concurrently).  The muxed pins are:
+
+	     Table 6-26 microSPARC/SuperSPARC Muxed Pins
+	---------------------------------------------------
+	|      Pin      | microSPARC Use | SuperSPARC Use |
+	---------------------------------------------------
+	|   ser_rtxc_b  |  ser_rtxc_b_   |   emc_irq_     |
+	---------------------------------------------------
+	|   iu_error_   |    iu_error_   |  video_irq_    |
+	---------------------------------------------------
+
+	When in SuperSPARC mode, the microSPARC interrupts and signals
+will be forced to their inactive state; when in microSPARC mode, the
+SuperSPARC interrupts will be inactive (see the Interrupt Controller
+register for details of the SuperSPARC specific interrupts).
+
+	All of the 89C105 configuration bits are cleared to 0 by a
+system reset.
+
+Diagnostic Messages
+
+	The Diganostic Message Register is an 8-bit read/write
+register provided for diagnostic use.  Accesses to this register have
+no effect, other than to change the value stored in it.  The
+Diagnostic Message Register is non-volatile across resets (except
+power-up, where the register will come up in a random state).
+
+	------------------------------------------------------------
+	|                          (D)                             |
+	------------------------------------------------------------
+	  7            6         5     4       3       2    1     0
+	
+	   Figure 6-20 Diagnostic Message Register Bit Definitions
+
+	Field Definitions:
+
+		(D)	Diagnostic value.  This value is
+			read/writable, and will be preserved across
+			resets.
+
+	All bits in the Diagnostic Message Register are unaffected by
+system reset.
+
+Miscellaneous System Functions
+
+	The 89C105 contains two 8-bit Auxiliary I/O Registers: one
+dedicated to system power down control, and one used to support
+several hardware functions that don't fit well elsewhere.  They are
+located at physical addresses 0x190 0000 (aux1) and 0x191 0000 (aux2).
+
+	Led/Floppy (Aux1) Register
+
+		-------------------------------------
+		|   (R)   | D | (R) | E | M | T | L |
+		-------------------------------------
+		  7    6    5    4    3   2   1   0
+
+  Figure 6-21 Auxiliary I/O Register 1 (0x190 0000) Field Definitions
+
+	Field Definitions:
+
+		(R)	AuxIO1[7:6,4] are unused.  They should be
+			masked out and their values discarded by
+			software (they will always read as 0).
+
+		D	Floppy Density Sense (1=high density, read
+			only).  This bit directly reflects the state
+			of the FPY_DENSENSE input pin.
+
+		E	Link Test Enable.  This bit directly reflected
+			in the LINK_TEST_EN pin.  It controls the AT&T
+			7213 LTE pin.
+
+		M	Monitor/Mouse Mux.  This bit is directly
+			reflected on the MON_MSE_MUX pin.
+
+		T	Terminal Count (1 = TC).  Writing a 1 will
+			send 4 SBus clock wide TC pulse to the 82077
+			floppy controller.  This is self-clearing
+			logic; it will always read as 0.  Writing a 0
+			has no effect.
+
+		L	LED (1 = on, 0 = off.)  This bit controls the
+			system LED on the front panel.
+
+	All output bits (E, M, T, L) are cleared to 0 by a system
+reset.  The input (D) is controlled by the corresponding chip pin
+(FPY_DENSENSE).  The unused bits ([7:6,4]) are unaffected by writes
+and will always read as 0.
+
+	Power Down Control (Aux2) Register
+
+	----------------------------------------------
+	|     (R)    | D |        (R)        | C | F |
+	----------------------------------------------
+	  7        6   5   4       3       2   1   0
+
+    Figure 6-22 Auxiliary I/O Register 2 Field Descriptions
+
+	Field Definitions:
+		(R)	AuxIO2[7:6,4:2] are unused.  They should be
+			masked out and their values discarded by
+			software ([7:6,4] will always read as 0; [3:2]
+			are read and writ-able but the values have no
+			meaning or effect).
+
+		D	Power Failure Detect (1 = power fail).  When
+			the power fail detect dignal from the power
+			supply is asserted (low), this bit is set and
+			a "module-error" interrupt will be generated
+			(this is a level-15 interrupt).  This bit is
+			cleared by writing a 1 to bit 1 (of this
+			register), or by disabling PFD in the Config
+			register.  It should be noted that the PFD*
+			input is ignored if disabled in the Config
+			Register.
+
+		C	Clear Power Fail Detect Int (1 = clear).  This
+			bit will clear the interrupt generated by PFD_
+			and the corresponding register bit (bit 5
+			above). Writing a 0 has no effect.
+
+		F	Power Off (1 = off).  This bit is simply
+			reflected in the power_off output pin.
+			Setting it to 1 will turn the power supply
+			off.
+
+	All AuxIO2 bits are cleared to 0 on system reset.
+
+	Modem Register
+
+	The 89C105 can support the RI (Ring Indicate) bit output of a
+modem directly when configured for Modem use (see the Configuration
+Register definition).  This mode uses the MSI_IRQ_ input pin for modem
+RI sensing, so it is not available in SuperSPARC mode.  When the Modem
+mode and the Modem interrupt are enabled in the Configuration
+Register, the 89C105 will generate an SBus level 5 interrupt on the RI
+transitions.
+
+	------------------------------------------------------
+	|                (R)               |  R  |  E  |  I  |
+	------------------------------------------------------
+	  7        6      5       4      3    2     1     0
+
+	     Figure 6-23 Modem Register Field Definitions
+
+	Field Definitions:
+
+		(R)	Modem bits [7:3] are unused, and will always
+			read as 0.  Writing has no effect.
+
+		R	RI pin.  This pin directly reflects the state
+			of the MSI_IRQ_ pin (which is used for modem
+			RI when in Modem mode). If the pin is low,
+			then this bit will be 0.
+
+		E	Edge Select.  This bit selects which edge of
+			RI causes an interrupt.  When cleared to 0, a
+			1->0 transition on the MSI_IRQ_ pin causes an
+			interrupt.  Toggling this bit after receiving
+			the first edge of an RI pulse will allow one
+			to get interrupts on both edges or RI.
+
+		I	Modem RI Interrupt.  This bit is set to 1 if a
+			modem RI interrupt is pending, and an SBus
+			level 5 interrupt is set. Writing a 0 to this
+			bit clears the interrupt.
+
+	Bits [1:0] (E,I) are cleared to 0 by a system reset.  The
+input (R) is controlled by the corresponding chip pin (MSI_IRQ_).  The
+unused bits ([7:3]) are unaffected by resets or writes and will always
+read as 0.
+
+NCR89C105 System Considerations
+
+	Muxed Pins
+
+	The 89C105 is designed to interface directly to the Texas
+Instruments microSPARC processor, as well as serve as a substitute for
+the SEC chip for uniprocessor SuperSparc systems.  In order to support
+both modes within the pin limitations of a 160-pin package, several
+pins were reused in different ways for the two processors.  In
+addition, the modem support and density select function allow several
+pins to be used in multiple modes.  A complete list of pins that can
+be used in multiple modes is shown in Table 6-37.
+
+		Table 6-37 Muxed pins
+----------------------------------------------------------------------
+| Pin # | Pin Name    | Direction | Control  | Synopsis              |
+----------------------------------------------------------------------
+|  21   | fpy_densel  | output    | Config[2]| Either the DENSEL or  |
+|       |             |           |          | ME[2] output of the   |
+|       |             |           |          | 82077 macrocell.      |
+----------------------------------------------------------------------
+|  105  | ser_rtxc_b_ | input     | Config[0]| Either ser_rtxc_b_ or |
+|       |             |           |          | emc_irq_ (Memory      |
+|       |             |           |          | Controller interrupt) |
+----------------------------------------------------------------------
+|  124  | iu_error_   | input     | Config[0]| Either iu_error_ or   |
+|       |             |           |          | video_irq_.           |
+----------------------------------------------------------------------
+|  160  | msi_irq_    | input     | Config[1]| Either modem_ri or    |
+|       |             |           |          | msi_irq_.             |
+----------------------------------------------------------------------
+
+	Interrupt Latency
+
+	The 89C105 uses interrupt-driven programmed I/O to support the
+internal macrocells.  This imposes some fairly stringent interrupt
+latency requirements on the system processor and operating system,
+which in turn limits the performance of the devices.  For example, the
+maximum data rate supported by the serial ports under SunOS in
+asynchronous mode is 38.4Kb/s, even though the hardware is capable of
+much higher data rates.  For the floppy controller, the data rate
+supported by SunOS is limited to 500Kb/s (720KB/1.44MB floppies), even
+though the hardware can support 1 Mb/s transfer rates (2.88MB
+floppies). Interrupt latency requirements for these data rates are
+included below.  Note that the latency distribution is important; a
+system can have a low average latency but have enough periods of
+extremely high latency to disrupt PIO device operation.  The devices
+can withstand some amount of latencies above the numbers given below,
+but they will see data overruns and underruns, which will reduce
+performace.  At some point, the performance is degraded to an extent
+that makes operation impossible--for instance, when the number of
+overruns seen by the floppy controller averages more than 1/sector.
+
+		Table 6-38 Interrupt Latency Requirements
+----------------------------------------------------------------------
+| Macrocell   | Latency | Background                                 |
+----------------------------------------------------------------------
+| 82077 floppy| 142 us  | This macrocell has a 16B FIFO, with the    |
+| controller  |         | effective threshold set to 9B by the SunOS |
+|             |         | driver.  This means that the latency       |
+|             |         | tolerance at 500 Kb/s before overrunning or|
+|             |         | underrunning is 9Bx16 us/B-2 us (overhead) |
+|             |         | = 142 us.                                  |
+----------------------------------------------------------------------
+| 85c30 serial| 208 us  | This macrocell has a 1B transmit FIFO. At  |
+|             |         | 38.4Kb/s, this gives a latency tolerance of|
+|             |         | 8b/38400 = 208 us.                         |
+----------------------------------------------------------------------
+| 85c30       | 208 us  | Same as above.  The keyboard/mouse         |
+| keyboard/   |         | controller is typically run at only 2400   |
+| mouse       |         | b/s, however, which yields a latency       |
+|             |         | tolerance of 3.33 ms.                      |
+----------------------------------------------------------------------
+
+	Many factors impact interrupt latency, some of the more
+significant of which are listed below.
+
+	- Integer performace.  For a given OS/interrupt handler, the
+	  faster the processor, the shorter the latency.
+
+	- System load.  System load has a large impact on latency,
+	  particularly loads that generate many interrupts, such as
+	  I/O processing.  The interrupt levels for the PIO devices
+	  have been chosen to be at or near the highest possible
+	  priority to minimize the impact that other less-critical
+	  interrupting devices will have on PIO performance.  Most
+	  interrupt handlers have some amount of critical code,
+	  however, so even low priority interrupts can significantly
+	  increase PIO latency.
+
+	- Critical code.  Several OS resources require mutual
+	  exclusion control, which is typically implemented (in a
+	  uniprocessor) by disabling interrupts for a block of
+	  critical code.  The number and length of these critical code
+	  sections depends on the system load.
+
+	- Message passing.  Sun-4M multiprocessing systems pass
+	  messages via software interrupts.  These interrupts can be
+	  at higher levels than the PIO interrupts, and they generally
+	  also entail sections of critical code.  Most of this code
+	  has been compiled out of uniprocessor-only versions of SunOS.
+
+	Unused Functional Blocks
+
+	For systems that don't use on or more of the 89C105's
+functions, this section describes the steps that must be taken to
+disable the unused devices.
+
+	Unused Floppy Controller
+
+	The floppy macrocell uses an asynchronous reset, so a system
+that does not need the floppy function need not even supply a floppy
+clock.  All inputs should be pulled to a known value, and the floppy
+interrupt bit should be masked in the System Interrupt Mask Register.
+
+	Unused Serial Ports or Keyboard/Mouse
+
+	The serial ports use a synchronous reset, so they need a clock
+to reach a benign state.  Any clock up to about 30-32 MHz may be ties
+to the serial_clk input (such as the SBus clock).  The serial
+controller and/or keyboard/mouse controller interrupt bit should be
+masked in the System Interrupt Mask Register, and all inputs should be
+pulled to a known value.
+
+	Unused Interrupt Controller
+
+	The interrupt controller must be used to access any of the
+internal macrocells, since they are all interrupt driven.  However, if
+89C105 is not providing the system interrupt control function, then
+the unused interrupt inputs should be tied high, all interrupt sources
+other than any internal devices that are being used should be masked
+in the System Interrupt Mask Register, and the IRL[3:0] lines should
+be decoded to provide discrete open-drain interrupts (if desired).
+
+	Unused Counter/Timers
+
+	If 89C105 is not providing the system counter/timer function,
+then the two counter interrupts should be masked in the System
+Interrupt Mask Register.  In this case, the clk_10mhz input need not
+be exactly 10 MHz, but a clock still needs to be applied for 89C105 to
+exit reset.  The clock may be up to 20 MHz.  NOTE: The length of the
+SYS_RST_OUT_ pulse (and 89C105's own internal reset, which is the same
+length) will change if a clock frequency other than 10 MHz is used.
+
+	Unused Reset Controller
+
+	If 89C105 does not generate the system reset, then either the
+system reset or the power valid signal may be tied to POR_RST_IN_.
+89C105 will not respond to accesses until the SYS_RST_OUT_ pulse goes
+inactive, however.  This is over 200 milliseconds with CLK_10MHZ at 10
+MHZ, and half that at 20 MHz.
+

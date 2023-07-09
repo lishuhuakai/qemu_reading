@@ -626,14 +626,15 @@ typedef struct PCIIORegion {
 #define PCI_MIN_GNT		0x3e	/* 8 bits */
 #define PCI_MAX_LAT		0x3f	/* 8 bits */
 
+/* PCI设备 */
 struct PCIDevice {
     /* PCI config space */
     uint8_t config[256];
 
     /* the following fields are read only */
-    PCIBus *bus;
-    int devfn;
-    char name[64];
+    PCIBus *bus; /* 设备所在的总线 */
+    int devfn; /* 设备在总线上的设备号 */
+    char name[64]; /* 设备名称 */
     PCIIORegion io_regions[PCI_NUM_REGIONS];
     
     /* do not access the following fields */

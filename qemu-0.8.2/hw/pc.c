@@ -605,7 +605,9 @@ static void pc_init_ne2k_isa(NICInfo *nd)
     nb_ne2k++;
 }
 
-/* PC hardware initialisation */
+/* PC hardware initialisation 
+ * pc硬件的初始化
+ */
 static void pc_init1(int ram_size, int vga_ram_size, int boot_device,
                      DisplayState *ds, const char **fd_filename, int snapshot,
                      const char *kernel_filename, const char *kernel_cmdline,

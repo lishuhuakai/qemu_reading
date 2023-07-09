@@ -24,22 +24,22 @@
 #include "vl.h"
 
 //#define DEBUG_PCI
-
+/* pci总线 */
 struct PCIBus {
     int bus_num;
     int devfn_min;
-    pci_set_irq_fn set_irq;
+    pci_set_irq_fn set_irq; /* 中断设置函数 */
     uint32_t config_reg; /* XXX: suppress */
     /* low level pic */
     SetIRQFunc *low_set_irq;
     void *irq_opaque;
-    PCIDevice *devices[256];
+    PCIDevice *devices[256]; /* pci设备 */
 };
 
 target_phys_addr_t pci_mem_base;
-static int pci_irq_index;
+static int pci_irq_index; /* 中断号索引值,每注册一个pci设备,这个值就会+1 */
 static PCIBus *first_bus;
-
+/* 注册总线 */
 PCIBus *pci_register_bus(pci_set_irq_fn set_irq, void *pic, int devfn_min)
 {
     PCIBus *bus;
@@ -74,7 +74,9 @@ int generic_pci_load(QEMUFile* f, void *opaque, int version_id)
     return 0;
 }
 
-/* -1 for devfn means auto assign */
+/* -1 for devfn means auto assign
+ * 注册设备
+ */
 PCIDevice *pci_register_device(PCIBus *bus, const char *name, 
                                int instance_size, int devfn,
                                PCIConfigReadFunc *config_read, 
@@ -97,7 +99,7 @@ PCIDevice *pci_register_device(PCIBus *bus, const char *name,
     if (!pci_dev)
         return NULL;
     pci_dev->bus = bus;
-    pci_dev->devfn = devfn;
+    pci_dev->devfn = devfn; /* 记录下设备编号 */
     pstrcpy(pci_dev->name, sizeof(pci_dev->name), name);
 
     if (!config_read)
@@ -111,6 +113,12 @@ PCIDevice *pci_register_device(PCIBus *bus, const char *name,
     return pci_dev;
 }
 
+/*
+ * @param region_num 区号
+ * @param map_func 映射函数
+ * @param size 大小
+ * @param type 类型
+ */
 void pci_register_io_region(PCIDevice *pci_dev, int region_num, 
                             uint32_t size, int type, 
                             PCIMapIORegionFunc *map_func)
@@ -124,12 +132,13 @@ void pci_register_io_region(PCIDevice *pci_dev, int region_num,
     r->addr = -1;
     r->size = size;
     r->type = type;
-    r->map_func = map_func;
+    r->map_func = map_func; /* 记录下映射函数 */
     if (region_num == PCI_ROM_SLOT) {
         addr = 0x30;
     } else {
         addr = 0x10 + region_num * 4;
     }
+    /* 记录下类型 */
     *(uint32_t *)(pci_dev->config + addr) = cpu_to_le32(type);
 }
 
@@ -138,10 +147,14 @@ target_phys_addr_t pci_to_cpu_addr(target_phys_addr_t addr)
     return addr + pci_mem_base;
 }
 
+/* 调整pci设备的访问地址
+ * @param d 待调整的pci设备
+ */
 static void pci_update_mappings(PCIDevice *d)
 {
     PCIIORegion *r;
     int cmd, i;
+    /* config_ofs -- config offset */
     uint32_t last_addr, new_addr, config_ofs;
     
     cmd = le16_to_cpu(*(uint16_t *)(d->config + PCI_COMMAND));
@@ -155,6 +168,7 @@ static void pci_update_mappings(PCIDevice *d)
         if (r->size != 0) {
             if (r->type & PCI_ADDRESS_SPACE_IO) {
                 if (cmd & PCI_COMMAND_IO) {
+                    /* 从寄存器中读取出新的地址 */
                     new_addr = le32_to_cpu(*(uint32_t *)(d->config + 
                                                          config_ofs));
                     new_addr = new_addr & ~(r->size - 1);
@@ -167,8 +181,8 @@ static void pci_update_mappings(PCIDevice *d)
                 } else {
                     new_addr = -1;
                 }
-            } else {
-                if (cmd & PCI_COMMAND_MEMORY) {
+            } else { /* 非IO */
+                if (cmd & PCI_COMMAND_MEMORY) { /* 内存地址空间?? */
                     new_addr = le32_to_cpu(*(uint32_t *)(d->config + 
                                                          config_ofs));
                     /* the ROM slot has a specific enable bit */
@@ -202,21 +216,25 @@ static void pci_update_mappings(PCIDevice *d)
                         } else {
                             isa_unassign_ioport(r->addr, r->size);
                         }
-                    } else {
+                    } else { /* 内存空间?? */
                         cpu_register_physical_memory(pci_to_cpu_addr(r->addr),
                                                      r->size, 
                                                      IO_MEM_UNASSIGNED);
                     }
                 }
-                r->addr = new_addr;
+                r->addr = new_addr; /* 记录下新的地址 */
                 if (r->addr != -1) {
+                    /* 这里举一个例子ne2000_map */
                     r->map_func(d, i, r->addr, r->size, r->type);
                 }
             }
         }
     }
 }
-
+/* 读取pci设备的配置信息
+ * @param address 地址
+ * @param len 要读取的配置的长度
+ */
 uint32_t pci_default_read_config(PCIDevice *d, 
                                  uint32_t address, int len)
 {
@@ -252,7 +270,7 @@ void pci_default_write_config(PCIDevice *d,
         }else{
             reg = (address - 0x10) >> 2;
         }
-        r = &d->io_regions[reg];
+        r = &d->io_regions[reg]; /* 获得region */
         if (r->size == 0)
             goto default_config;
         /* compute the stored value */
@@ -264,7 +282,8 @@ void pci_default_write_config(PCIDevice *d,
             val |= r->type;
         }
         *(uint32_t *)(d->config + address) = cpu_to_le32(val);
-        pci_update_mappings(d);
+        /* val有可能是新的映射地址 */
+        pci_update_mappings(d); /* 更新映射关系 */
         return;
     }
  default_config:
@@ -330,7 +349,11 @@ void pci_default_write_config(PCIDevice *d,
         pci_update_mappings(d);
     }
 }
-
+/* 配置pci设备 
+ * @param addr 地址
+ * @param val 要写入的值
+ * @param len 要写入值的长度
+ */
 void pci_data_write(void *opaque, uint32_t addr, uint32_t val, int len)
 {
     PCIBus *s = opaque;
@@ -344,7 +367,7 @@ void pci_data_write(void *opaque, uint32_t addr, uint32_t val, int len)
     bus_num = (addr >> 16) & 0xff;
     if (bus_num != 0)
         return;
-    pci_dev = s->devices[(addr >> 8) & 0xff];
+    pci_dev = s->devices[(addr >> 8) & 0xff]; /* 获得设备 */
     if (!pci_dev)
         return;
     config_addr = addr & 0xff;
@@ -352,9 +375,13 @@ void pci_data_write(void *opaque, uint32_t addr, uint32_t val, int len)
     printf("pci_config_write: %s: addr=%02x val=%08x len=%d\n",
            pci_dev->name, config_addr, val, len);
 #endif
-    pci_dev->config_write(pci_dev, config_addr, val, len);
+    /* 一般默认的write函数为pci_default_write_config */
+    pci_dev->config_write(pci_dev, config_addr, val, len); /* 然后传递给设备 */
 }
-
+/* 从pci上读取数据 
+ * @param addr 地址
+ * @param len 长度
+ */
 uint32_t pci_data_read(void *opaque, uint32_t addr, int len)
 {
     PCIBus *s = opaque;
@@ -362,10 +389,10 @@ uint32_t pci_data_read(void *opaque, uint32_t addr, int len)
     int config_addr, bus_num;
     uint32_t val;
 
-    bus_num = (addr >> 16) & 0xff;
+    bus_num = (addr >> 16) & 0xff; /* 总线号 */
     if (bus_num != 0)
         goto fail;
-    pci_dev = s->devices[(addr >> 8) & 0xff];
+    pci_dev = s->devices[(addr >> 8) & 0xff]; /* 获得pci设备 */
     if (!pci_dev) {
     fail:
         switch(len) {
@@ -383,6 +410,7 @@ uint32_t pci_data_read(void *opaque, uint32_t addr, int len)
         goto the_end;
     }
     config_addr = addr & 0xff;
+    /* 读取配置信息,参考函数pci_default_read_config */
     val = pci_dev->config_read(pci_dev, config_addr, len);
 #if defined(DEBUG_PCI)
     printf("pci_config_read: %s: addr=%02x val=%08x len=%d\n",
@@ -425,7 +453,7 @@ static pci_class_desc pci_class_descriptions[] =
     { 0x0c03, "USB controller"},
     { 0, NULL}
 };
-
+/* 信息打印 */
 static void pci_info_device(PCIDevice *d)
 {
     int i, class;
@@ -440,7 +468,7 @@ static void pci_info_device(PCIDevice *d)
     while (desc->desc && class != desc->class)
         desc++;
     if (desc->desc) {
-        term_printf("%s", desc->desc);
+        term_printf("%s", desc->desc); /* 打印出类别 */
     } else {
         term_printf("Class %04x", class);
     }
@@ -449,7 +477,7 @@ static void pci_info_device(PCIDevice *d)
            le16_to_cpu(*((uint16_t *)(d->config + PCI_DEVICE_ID))));
 
     if (d->config[PCI_INTERRUPT_PIN] != 0) {
-        term_printf("      IRQ %d.\n", d->config[PCI_INTERRUPT_LINE]);
+        term_printf("      IRQ %d.\n", d->config[PCI_INTERRUPT_LINE]); /* 中断 */
     }
     for(i = 0;i < PCI_NUM_REGIONS; i++) {
         r = &d->io_regions[i];

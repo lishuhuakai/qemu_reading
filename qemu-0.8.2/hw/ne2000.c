@@ -123,16 +123,16 @@ typedef struct NE2000State {
     uint32_t start;
     uint32_t stop;
     uint8_t boundary;
-    uint8_t tsr;
-    uint8_t tpsr;
-    uint16_t tcnt;
-    uint16_t rcnt;
-    uint32_t rsar;
+    uint8_t tsr; /* 传输状态寄存器?? */
+    uint8_t tpsr; /* Transmit starting page */
+    uint16_t tcnt; /* Tx byte count */
+    uint16_t rcnt; /* Remote byte count */
+    uint32_t rsar; /* Remote start address */
     uint8_t rsr;
-    uint8_t rxcr;
+    uint8_t rxcr; /* RX configuration reg */
     uint8_t isr;
     uint8_t dcfg;
-    uint8_t imr;
+    uint8_t imr; /* Interrupt mask reg */
     uint8_t phys[6]; /* mac address */
     uint8_t curpag;
     uint8_t mult[8]; /* multicast mask array */
@@ -158,16 +158,16 @@ static void ne2000_reset(NE2000State *s)
         s->mem[2 * i + 1] = s->mem[i];
     }
 }
-
+/* ne2000处理中断 */
 static void ne2000_update_irq(NE2000State *s)
 {
     int isr;
-    isr = (s->isr & s->imr) & 0x7f;
+    isr = (s->isr & s->imr) & 0x7f; /* 取低7bit作为isr */
 #if defined(DEBUG_NE2000)
     printf("NE2000: Set IRQ line %d to %d (%02x %02x)\n",
 	   s->irq, isr ? 1 : 0, s->isr, s->imr);
 #endif
-    if (s->irq == 16) {
+    if (s->irq == 16) { /* pci中断 */
         /* PCI irq */
         pci_set_irq(s->pci_dev, 0, (isr != 0));
     } else {
@@ -225,7 +225,7 @@ static int ne2000_can_receive(void *opaque)
 }
 
 #define MIN_BUF_SIZE 60
-
+/* 接收数据 */
 static void ne2000_receive(void *opaque, const uint8_t *buf, int size)
 {
     NE2000State *s = opaque;
@@ -233,7 +233,7 @@ static void ne2000_receive(void *opaque, const uint8_t *buf, int size)
     int total_len, next, avail, len, index, mcast_idx;
     uint8_t buf1[60];
     static const uint8_t broadcast_macaddr[6] = 
-        { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
+        { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff }; /* 广播地址 */
     
 #if defined(DEBUG_NE2000)
     printf("NE2000: received len=%d\n", size);
@@ -271,7 +271,7 @@ static void ne2000_receive(void *opaque, const uint8_t *buf, int size)
 
 
     /* if too small buffer, then expand it */
-    if (size < MIN_BUF_SIZE) {
+    if (size < MIN_BUF_SIZE) { /* 缓存太小,那就扩展 */
         memcpy(buf1, buf, size);
         memset(buf1 + size, 0, MIN_BUF_SIZE - size);
         buf = buf1;
@@ -299,7 +299,7 @@ static void ne2000_receive(void *opaque, const uint8_t *buf, int size)
 
     /* write packet data */
     while (size > 0) {
-        avail = s->stop - index;
+        avail = s->stop - index; /* 可以读取的数据 */
         len = size;
         if (len > avail)
             len = avail;
@@ -334,7 +334,7 @@ static void ne2000_ioport_write(void *opaque, uint32_t addr, uint32_t val)
             /* test specific case: zero length transfert */
             if ((val & (E8390_RREAD | E8390_RWRITE)) &&
                 s->rcnt == 0) {
-                s->isr |= ENISR_RDC;
+                s->isr |= ENISR_RDC; /* dma操作完成 */
                 ne2000_update_irq(s);
             }
             if (val & E8390_TRANS) {
@@ -344,11 +344,11 @@ static void ne2000_ioport_write(void *opaque, uint32_t addr, uint32_t val)
                     index -= NE2000_PMEM_SIZE;
                 /* fail safe: check range on the transmitted length  */
                 if (index + s->tcnt <= NE2000_PMEM_END) {
-                    qemu_send_packet(s->vc, s->mem + index, s->tcnt);
+                    qemu_send_packet(s->vc, s->mem + index, s->tcnt); /* 开始发包 */
                 }
                 /* signal end of transfert */
                 s->tsr = ENTSR_PTX;
-                s->isr |= ENISR_TX;
+                s->isr |= ENISR_TX; /* 发包完成 */
                 s->cmd &= ~E8390_TRANS; 
                 ne2000_update_irq(s);
             }
@@ -367,17 +367,17 @@ static void ne2000_ioport_write(void *opaque, uint32_t addr, uint32_t val)
             s->boundary = val;
             break;
         case EN0_IMR:
-            s->imr = val;
+            s->imr = val; /* 设置中断掩码 */
             ne2000_update_irq(s);
             break;
         case EN0_TPSR:
             s->tpsr = val;
             break;
         case EN0_TCNTLO:
-            s->tcnt = (s->tcnt & 0xff00) | val;
+            s->tcnt = (s->tcnt & 0xff00) | val; /* 设置低bit */
             break;
         case EN0_TCNTHI:
-            s->tcnt = (s->tcnt & 0x00ff) | (val << 8);
+            s->tcnt = (s->tcnt & 0x00ff) | (val << 8); /* 设置高bit */
             break;
         case EN0_RSARLO:
             s->rsar = (s->rsar & 0xff00) | val;
@@ -392,7 +392,7 @@ static void ne2000_ioport_write(void *opaque, uint32_t addr, uint32_t val)
             s->rcnt = (s->rcnt & 0x00ff) | (val << 8);
             break;
         case EN0_RXCR:
-            s->rxcr = val;
+            s->rxcr = val; /* 收包控制寄存器 */
             break;
         case EN0_DCFG:
             s->dcfg = val;
@@ -750,6 +750,10 @@ typedef struct PCINE2000State {
     NE2000State ne2000;
 } PCINE2000State;
 
+/* 动态调整ne2000寄存器的访问地址
+ * @param addr 起始地址
+ * @param region_num 区域编号
+ */
 static void ne2000_map(PCIDevice *pci_dev, int region_num, 
                        uint32_t addr, uint32_t size, int type)
 {

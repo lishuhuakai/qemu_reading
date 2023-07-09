@@ -51,7 +51,7 @@ PCIBus *i440fx_init(void)
     s = qemu_mallocz(sizeof(I440FXState));
     b = pci_register_bus(piix3_set_irq, NULL, 0);
     s->bus = b;
-
+    /* 注册读写函数 */
     register_ioport_write(0xcf8, 4, 4, i440fx_addr_writel, s);
     register_ioport_read(0xcf8, 4, 4, i440fx_addr_readl, s);
 
@@ -88,13 +88,19 @@ static uint32_t pci_irq_levels[4][PCI_IRQ_WORDS];
 /* return the global irq number corresponding to a given device irq
    pin. We could also use the bus number to have a more precise
    mapping. */
+/* 根据给定设备的irq pin,返回全局中断号
+ * pci只有4个全局中断号,所有的设备中断号(irq_num)都要映射到这4个全局中断号上去
+ */
 static inline int pci_slot_get_pirq(PCIDevice *pci_dev, int irq_num)
 {
     int slot_addend;
     slot_addend = (pci_dev->devfn >> 3) - 1;
-    return (irq_num + slot_addend) & 3;
+    return (irq_num + slot_addend) & 3; /* 实际取值只有0~2 */
 }
-
+/* 获取pci irq level
+ * 由于一个全局中断号对应多台设备,对于某个全局中断号irq_num而言,只要它对应的设备有一个的level
+ * 是1,那么irq_num对应的pci irq level就是1
+ */
 static inline int get_pci_irq_level(int irq_num)
 {
     int pic_level;
@@ -107,7 +113,7 @@ static inline int get_pci_irq_level(int irq_num)
         pic_level = 0;
         for(i = 0; i < PCI_IRQ_WORDS; i++) {
             if (pci_irq_levels[irq_num][i]) {
-                pic_level = 1;
+                pic_level = 1; /* 有一个设备触发了,那就返回1 */
                 break;
             }
         }
@@ -116,19 +122,28 @@ static inline int get_pci_irq_level(int irq_num)
     return pic_level;
 }
 
+/* 触发中断
+ * @param level 取值只有0或者1
+ * @param irq_num 设备中断号
+ */
 static void piix3_set_irq(PCIDevice *pci_dev, void *pic, int irq_num, int level)
 {
     int irq_index, shift, pic_irq, pic_level;
     uint32_t *p;
-
-    irq_num = pci_slot_get_pirq(pci_dev, irq_num);
-    irq_index = pci_dev->irq_index;
+    /* 一个中断号可以对应多个pci设备 */
+    irq_num = pci_slot_get_pirq(pci_dev, irq_num); /* 根据设备中断号得到映射之后的全局中断号 */
+    irq_index = pci_dev->irq_index; /* 获取设备的中断索引号 */
+    /* 一个uint32_t恰好是32bit,对应32台设备 */
     p = &pci_irq_levels[irq_num][irq_index >> 5];
-    shift = (irq_index & 0x1f);
+    shift = (irq_index & 0x1f); /* 取低5bit */
+    /* 每台设备对应1个bit
+     * *p & ~(1 << shift) 将设备对应的bit清零
+     * level << shift 为设备对应的新bit
+     */
     *p = (*p & ~(1 << shift)) | (level << shift);
 
     /* now we change the pic irq level according to the piix irq mappings */
-    /* XXX: optimize */
+    /* 根据piix irq映射表实现pic irq level的映射 */
     pic_irq = piix3_dev->config[0x60 + irq_num];
     if (pic_irq < 16) {
         /* the pic level is the logical OR of all the PCI irqs mapped
@@ -185,7 +200,7 @@ int piix3_init(PCIBus *bus)
 {
     PCIDevice *d;
     uint8_t *pci_conf;
-
+    /* 在pci上注册设备 */
     d = pci_register_device(bus, "PIIX3", sizeof(PCIDevice),
                                     -1, NULL, NULL);
     register_savevm("PIIX3", 0, 1, generic_pci_save, generic_pci_load, d);
@@ -271,9 +286,11 @@ static __attribute__((unused)) uint32_t pci_config_readl(PCIDevice *d, uint32_t 
     return pci_data_read(s, addr, 4);
 }
 
+/* 读取pci设备的配置 */
 static uint32_t pci_config_readw(PCIDevice *d, uint32_t addr)
 {
     PCIBus *s = d->bus;
+    /* 构造访问地址,高16bit是总线号,低16bit是设备编号 */
     addr |= (pci_bus_num(s) << 16) | (d->devfn << 8);
     return pci_data_read(s, addr, 2);
 }
@@ -284,7 +301,11 @@ static uint32_t pci_config_readb(PCIDevice *d, uint32_t addr)
     addr |= (pci_bus_num(s) << 16) | (d->devfn << 8);
     return pci_data_read(s, addr, 1);
 }
-
+/* 设置pci设备的访问基址
+ * @param d 待配置的pci设备
+ * @param addr 访问基址
+ * @param region_num 区号
+ */
 static void pci_set_io_region_addr(PCIDevice *d, int region_num, uint32_t addr)
 {
     PCIIORegion *r;
@@ -300,7 +321,9 @@ static void pci_set_io_region_addr(PCIDevice *d, int region_num, uint32_t addr)
     pci_config_writel(d, ofs, addr);
     r = &d->io_regions[region_num];
 
-    /* enable memory mappings */
+    /* enable memory mappings 
+     * 启用内存映射
+     */
     cmd = pci_config_readw(d, PCI_COMMAND);
     if ( region_num == PCI_ROM_SLOT )
         cmd |= 2;
@@ -401,7 +424,9 @@ void pci_bios_init(void)
     pci_bios_io_addr = 0xc000;
     pci_bios_mem_addr = 0xf0000000;
 
-    /* activate IRQ mappings */
+    /* activate IRQ mappings 
+     * 激活IRQ mapping
+     */
     elcr[0] = 0x00;
     elcr[1] = 0x00;
     for(i = 0; i < 4; i++) {
