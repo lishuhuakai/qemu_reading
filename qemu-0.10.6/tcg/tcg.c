@@ -58,7 +58,7 @@
 
 static void patch_reloc(uint8_t *code_ptr, int type, 
                         tcg_target_long value, tcg_target_long addend);
-
+/* 各类操作符限定 */
 static TCGOpDef tcg_op_defs[] = {
 #define DEF(s, n, copy_size) { #s, 0, 0, n, n, 0, copy_size },
 #define DEF2(s, iargs, oargs, cargs, flags) { #s, iargs, oargs, cargs, iargs + oargs + cargs, flags, 0 },
@@ -122,7 +122,7 @@ static void tcg_out_label(TCGContext *s, int label_index,
     TCGLabel *l;
     TCGRelocation *r;
 
-    l = &s->labels[label_index];
+    l = &s->labels[label_index]; /* 获取标签 */
     if (l->has_value)
         tcg_abort();
     r = l->u.first_reloc;
@@ -131,9 +131,9 @@ static void tcg_out_label(TCGContext *s, int label_index,
         r = r->next;
     }
     l->has_value = 1;
-    l->u.value = value;
+    l->u.value = value; /* 将值存储起来 */
 }
-
+/* 分配一个新的label */
 int gen_new_label(void)
 {
     TCGContext *s = &tcg_ctx;
@@ -200,6 +200,9 @@ void tcg_pool_reset(TCGContext *s)
     s->pool_current = NULL;
 }
 
+/* 初始化tcg context
+ * @param s 待初始化的tcg context
+ */
 void tcg_context_init(TCGContext *s)
 {
     int op, total_args, n;
@@ -250,6 +253,9 @@ void tcg_set_frame(TCGContext *s, int reg,
     s->frame_reg = reg;
 }
 
+/* 初始化TCG上下文
+ * @param s TCG上下文
+ */
 void tcg_func_start(TCGContext *s)
 {
     int i;
@@ -271,6 +277,9 @@ static inline void tcg_temp_alloc(TCGContext *s, int n)
         tcg_abort();
 }
 
+/* 内存分配, 分配一个全局的寄存器
+ * @param reg 寄存器编号
+ */
 static inline int tcg_global_reg_new_internal(TCGType type, int reg,
                                               const char *name)
 {
@@ -288,8 +297,8 @@ static inline int tcg_global_reg_new_internal(TCGType type, int reg,
     tcg_temp_alloc(s, s->nb_globals + 1);
     ts = &s->temps[s->nb_globals];
     ts->base_type = type;
-    ts->type = type;
-    ts->fixed_reg = 1;
+    ts->type = type; /* 记录下类型 */
+    ts->fixed_reg = 1; /* 采用固定的寄存器 */
     ts->reg = reg;
     ts->name = name;
     s->nb_globals++;
@@ -392,6 +401,7 @@ TCGv_i64 tcg_global_mem_new_i64(int reg, tcg_target_long offset,
     return MAKE_TCGV_I64(idx);
 }
 
+/* 分配一个temp变量 */
 static inline int tcg_temp_new_internal(TCGType type, int temp_local)
 {
     TCGContext *s = &tcg_ctx;
@@ -458,7 +468,7 @@ TCGv_i64 tcg_temp_new_internal_i64(int temp_local)
     idx = tcg_temp_new_internal(TCG_TYPE_I64, temp_local);
     return MAKE_TCGV_I64(idx);
 }
-
+/* 内存释放 */
 static inline void tcg_temp_free_internal(int idx)
 {
     TCGContext *s = &tcg_ctx;
@@ -472,6 +482,7 @@ static inline void tcg_temp_free_internal(int idx)
     k = ts->base_type;
     if (ts->temp_local)
         k += TCG_TYPE_COUNT;
+    /* 将空闲的变量放入free_temp链表 */
     ts->next_free_temp = s->first_free_temp[k];
     s->first_free_temp[k] = idx;
 }
@@ -673,7 +684,7 @@ static void tcg_reg_alloc_start(TCGContext *s)
         if (ts->fixed_reg) {
             ts->val_type = TEMP_VAL_REG;
         } else {
-            ts->val_type = TEMP_VAL_MEM;
+            ts->val_type = TEMP_VAL_MEM; /* 内存变量 */
         }
     }
     for(i = s->nb_globals; i < s->nb_temps; i++) {
@@ -1090,7 +1101,7 @@ static void tcg_liveness_analysis(TCGContext *s)
     op_index = nb_ops - 1;
     while (op_index >= 0) {
         op = gen_opc_buf[op_index];
-        def = &tcg_op_defs[op];
+        def = &tcg_op_defs[op]; /* 操作符定义信息 */
         switch(op) {
         case INDEX_op_call:
             {
@@ -1162,27 +1173,32 @@ static void tcg_liveness_analysis(TCGContext *s)
             break;
             /* XXX: optimize by hardcoding common cases (e.g. triadic ops) */
         default:
-            args -= def->nb_args;
-            nb_iargs = def->nb_iargs;
-            nb_oargs = def->nb_oargs;
+            args -= def->nb_args; /* args为操作数数组 */
+            nb_iargs = def->nb_iargs; /* 输入参数的个数 */
+            nb_oargs = def->nb_oargs; /* 输出参数的个数 */
 
             /* Test if the operation can be removed because all
                its outputs are dead. We assume that nb_oargs == 0
                implies side effects */
+            /* 如果指令的输出参数都处于dead状态(后续指令不依赖于该指令的输出参数),那么该指令可以消除 */
             if (!(def->flags & TCG_OPF_SIDE_EFFECTS) && nb_oargs != 0) {
                 for(i = 0; i < nb_oargs; i++) {
                     arg = args[i];
-                    if (!dead_temps[arg])
+                    if (!dead_temps[arg]) /* 后续指令依赖于本条指令的输出参数,那就不能消除 */
                         goto do_not_remove;
                 }
+                /* 此条指令可以消除,用nop替代 */
                 tcg_set_nop(s, gen_opc_buf + op_index, args, def->nb_args);
 #ifdef CONFIG_PROFILER
                 s->del_op_count++;
 #endif
             } else {
             do_not_remove:
-
+                /* 接下来的代码都是为处理前一条指令做准备 */
                 /* output args are dead */
+                /* 本条指令的输出参数只有可能对后续指令产生影响,不会对前一条指令有影响,所以
+                 * 对于前一条指令而言,本条指令的输出参数处于dead状态
+                 */
                 for(i = 0; i < nb_oargs; i++) {
                     arg = args[i];
                     dead_temps[arg] = 1;
@@ -1198,9 +1214,17 @@ static void tcg_liveness_analysis(TCGContext *s)
 
                 /* input args are live */
                 dead_iargs = 0;
+                /* 本条指令的输入参数可能由前向指令产生,先将输入参数标记为非dead状态
+                 * 方便前向指令判断是否能够消除
+                 */
                 for(i = 0; i < nb_iargs; i++) {
                     arg = args[i + nb_oargs];
-                    if (dead_temps[arg]) {
+                    if (dead_temps[arg]) { /* 输入参数i不由前向指令产生 */
+                        /* dead_iargs用于指示本条指令的输入参数处于dead状态,有什么用处吗?
+                         * dead_temps[arg]说明:
+                         * # 后续指令不依赖于本指令的输入参数i,也就是本指令使用完输入参数i之后
+                         * # 参数i就处于dead状态
+                         */
                         dead_iargs |= (1 << i);
                     }
                     dead_temps[arg] = 0;
@@ -1333,7 +1357,10 @@ static void tcg_reg_free(TCGContext *s, int reg)
     }
 }
 
-/* Allocate a register belonging to reg1 & ~reg2 */
+/* Allocate a register belonging to reg1 & ~reg2 
+ * @param reg1 所有寄存器的集合
+ * @param reg2 已经分配了的寄存器的集合
+ */
 static int tcg_reg_alloc(TCGContext *s, TCGRegSet reg1, TCGRegSet reg2)
 {
     int i, reg;
@@ -1342,6 +1369,7 @@ static int tcg_reg_alloc(TCGContext *s, TCGRegSet reg1, TCGRegSet reg2)
     tcg_regset_andnot(reg_ct, reg1, reg2);
 
     /* first try free registers */
+    /* 找到一个空闲的寄存器 */
     for(i = 0; i < ARRAY_SIZE(tcg_target_reg_alloc_order); i++) {
         reg = tcg_target_reg_alloc_order[i];
         if (tcg_regset_test_reg(reg_ct, reg) && s->reg_to_temp[reg] == -1)
@@ -1362,6 +1390,7 @@ static int tcg_reg_alloc(TCGContext *s, TCGRegSet reg1, TCGRegSet reg2)
 
 /* save a temporary to memory. 'allocated_regs' is used in case a
    temporary registers needs to be allocated to store a constant. */
+/* 将temporary保存到内存中去. */
 static void temp_save(TCGContext *s, int temp, TCGRegSet allocated_regs)
 {
     TCGTemp *ts;
@@ -1450,6 +1479,7 @@ static void tcg_reg_alloc_movi(TCGContext *s, const TCGArg *args)
     }
 }
 
+/* 内存分配 */
 static void tcg_reg_alloc_mov(TCGContext *s, const TCGOpDef *def,
                               const TCGArg *args,
                               unsigned int dead_iargs)
@@ -1460,7 +1490,7 @@ static void tcg_reg_alloc_mov(TCGContext *s, const TCGOpDef *def,
 
     ots = &s->temps[args[0]];
     ts = &s->temps[args[1]];
-    arg_ct = &def->args_ct[0];
+    arg_ct = &def->args_ct[0]; /* 参数限定 */
 
     /* XXX: always mark arg dead if IS_DEAD_IARG(0) */
     if (ts->val_type == TEMP_VAL_REG) {
@@ -1475,7 +1505,7 @@ static void tcg_reg_alloc_mov(TCGContext *s, const TCGOpDef *def,
             if (ots->val_type == TEMP_VAL_REG) {
                 reg = ots->reg;
             } else {
-                reg = tcg_reg_alloc(s, arg_ct->u.regs, s->reserved_regs);
+                reg = tcg_reg_alloc(s, arg_ct->u.regs, s->reserved_regs); /* 分配一个寄存器 */
             }
             if (ts->reg != reg) {
                 tcg_out_mov(s, reg, ts->reg);
@@ -1509,6 +1539,7 @@ static void tcg_reg_alloc_mov(TCGContext *s, const TCGOpDef *def,
     ots->mem_coherent = 0;
 }
 
+/* 为各种op生成指令 */
 static void tcg_reg_alloc_op(TCGContext *s, 
                              const TCGOpDef *def, int opc,
                              const TCGArg *args,
@@ -1522,8 +1553,8 @@ static void tcg_reg_alloc_op(TCGContext *s,
     TCGArg new_args[TCG_MAX_OP_ARGS];
     int const_args[TCG_MAX_OP_ARGS];
 
-    nb_oargs = def->nb_oargs;
-    nb_iargs = def->nb_iargs;
+    nb_oargs = def->nb_oargs; /* 输入参数的个数 */
+    nb_iargs = def->nb_iargs; /* 输出参数的个数 */
 
     /* copy constants */
     memcpy(new_args + nb_oargs + nb_iargs, 
@@ -1531,30 +1562,31 @@ static void tcg_reg_alloc_op(TCGContext *s,
            sizeof(TCGArg) * def->nb_cargs);
 
     /* satisfy input constraints */ 
-    tcg_regset_set(allocated_regs, s->reserved_regs);
-    for(k = 0; k < nb_iargs; k++) {
+    tcg_regset_set(allocated_regs, s->reserved_regs); /* reserved_regs中的寄存器需要保留,不能分配 */
+    for (k = 0; k < nb_iargs; k++) { /* 遍历输入参数 */
         i = def->sorted_args[nb_oargs + k];
         arg = args[i];
-        arg_ct = &def->args_ct[i];
-        ts = &s->temps[arg];
-        if (ts->val_type == TEMP_VAL_MEM) {
+        arg_ct = &def->args_ct[i]; /* 参数的信息 */
+        ts = &s->temps[arg]; /* ts为输入参数 */
+        if (ts->val_type == TEMP_VAL_MEM) { /* ts是一个内存变量 */
             reg = tcg_reg_alloc(s, arg_ct->u.regs, allocated_regs);
+            /* 将内存中的值加载到寄存器reg之中 */
             tcg_out_ld(s, ts->type, reg, ts->mem_reg, ts->mem_offset);
             ts->val_type = TEMP_VAL_REG;
             ts->reg = reg;
             ts->mem_coherent = 1;
             s->reg_to_temp[reg] = arg;
-        } else if (ts->val_type == TEMP_VAL_CONST) {
+        } else if (ts->val_type == TEMP_VAL_CONST) { /* 常量 */
             if (tcg_target_const_match(ts->val, arg_ct)) {
                 /* constant is OK for instruction */
                 const_args[i] = 1;
-                new_args[i] = ts->val;
+                new_args[i] = ts->val; /* 记录下常量值 */
                 goto iarg_end;
             } else {
                 /* need to move to a register */
-                reg = tcg_reg_alloc(s, arg_ct->u.regs, allocated_regs);
-                tcg_out_movi(s, ts->type, reg, ts->val);
-                ts->val_type = TEMP_VAL_REG;
+                reg = tcg_reg_alloc(s, arg_ct->u.regs, allocated_regs); /* 分配一个寄存器 */
+                tcg_out_movi(s, ts->type, reg, ts->val); /* 将值转移到寄存器中 */
+                ts->val_type = TEMP_VAL_REG; /* 输入参数类型转换为寄存器变量 */
                 ts->reg = reg;
                 ts->mem_coherent = 0;
                 s->reg_to_temp[reg] = arg;
@@ -1586,7 +1618,7 @@ static void tcg_reg_alloc_op(TCGContext *s,
             tcg_out_mov(s, reg, ts->reg);
         }
         new_args[i] = reg;
-        const_args[i] = 0;
+        const_args[i] = 0; /* 非常量 */
         tcg_regset_set_reg(allocated_regs, reg);
     iarg_end: ;
     }
@@ -1595,13 +1627,13 @@ static void tcg_reg_alloc_op(TCGContext *s,
         tcg_reg_alloc_bb_end(s, allocated_regs);
     } else {
         /* mark dead temporaries and free the associated registers */
-        for(i = 0; i < nb_iargs; i++) {
-            arg = args[nb_oargs + i];
-            if (IS_DEAD_IARG(i)) {
-                ts = &s->temps[arg];
-                if (!ts->fixed_reg) {
+        for(i = 0; i < nb_iargs; i++) { /* 遍历输入参数 */
+            arg = args[nb_oargs + i]; /* 输入参数的编号 */
+            if (IS_DEAD_IARG(i)) { /* 后续指令都不会再使用输入参数i */
+                ts = &s->temps[arg]; /* 输入参数 */
+                if (!ts->fixed_reg) { /* 输入参数并没有处于固定的寄存器之中 */
                     if (ts->val_type == TEMP_VAL_REG)
-                        s->reg_to_temp[ts->reg] = -1;
+                        s->reg_to_temp[ts->reg] = -1; /* 因为后续不在使用此参数,没有记录的必要 */
                     ts->val_type = TEMP_VAL_DEAD;
                 }
             }
@@ -1624,11 +1656,11 @@ static void tcg_reg_alloc_op(TCGContext *s,
         
         /* satisfy the output constraints */
         tcg_regset_set(allocated_regs, s->reserved_regs);
-        for(k = 0; k < nb_oargs; k++) {
+        for (k = 0; k < nb_oargs; k++) { /* 遍历所有的输出参数 */
             i = def->sorted_args[k];
-            arg = args[i];
+            arg = args[i]; /* 输出参数编号 */
             arg_ct = &def->args_ct[i];
-            ts = &s->temps[arg];
+            ts = &s->temps[arg]; /* 输出参数 */
             if (arg_ct->ct & TCG_CT_ALIAS) {
                 reg = new_args[arg_ct->alias_index];
             } else {
@@ -1642,7 +1674,7 @@ static void tcg_reg_alloc_op(TCGContext *s,
             }
             tcg_regset_set_reg(allocated_regs, reg);
             /* if a fixed register is used, then a move will be done afterwards */
-            if (!ts->fixed_reg) {
+            if (!ts->fixed_reg) { /* 不使用固定的寄存器 */
                 if (ts->val_type == TEMP_VAL_REG)
                     s->reg_to_temp[ts->reg] = -1;
                 ts->val_type = TEMP_VAL_REG;
@@ -1650,14 +1682,16 @@ static void tcg_reg_alloc_op(TCGContext *s,
                 /* temp value is modified, so the value kept in memory is
                    potentially not the same */
                 ts->mem_coherent = 0; 
-                s->reg_to_temp[reg] = arg;
+                s->reg_to_temp[reg] = arg; /* 记录下参数所处的寄存器 */
             }
         oarg_end:
             new_args[i] = reg;
         }
     }
 
-    /* emit instruction */
+    /* emit instruction
+     * 生成指令
+     */
     tcg_out_op(s, opc, new_args, const_args);
     
     /* move the outputs in the correct register if needed */
@@ -1665,7 +1699,7 @@ static void tcg_reg_alloc_op(TCGContext *s,
         ts = &s->temps[args[i]];
         reg = new_args[i];
         if (ts->fixed_reg && ts->reg != reg) {
-            tcg_out_mov(s, ts->reg, reg);
+            tcg_out_mov(s, ts->reg, reg); /* 生成mov指令,将结果移动到指定的寄存器中去 */
         }
     }
 }
@@ -1676,6 +1710,7 @@ static void tcg_reg_alloc_op(TCGContext *s,
 #define STACK_DIR(x) (x)
 #endif
 
+/* call指令的翻译 */
 static int tcg_reg_alloc_call(TCGContext *s, const TCGOpDef *def,
                               int opc, const TCGArg *args,
                               unsigned int dead_iargs)
@@ -1702,6 +1737,7 @@ static int tcg_reg_alloc_call(TCGContext *s, const TCGOpDef *def,
 
     /* assign stack slots first */
     /* XXX: preallocate call stack */
+    /* 剩下的参数都需要压栈 */
     call_stack_size = (nb_params - nb_regs) * sizeof(tcg_target_long);
     call_stack_size = (call_stack_size + TCG_TARGET_STACK_ALIGN - 1) & 
         ~(TCG_TARGET_STACK_ALIGN - 1);

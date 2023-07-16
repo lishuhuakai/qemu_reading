@@ -784,7 +784,11 @@ static void pc_init_ne2k_isa(NICInfo *nd, qemu_irq *pic)
     nb_ne2k++;
 }
 
-/* PC hardware initialisation */
+/* PC hardware initialisation
+ * pc硬件初始化
+ * @param ram_size 内存大小
+ * @param vga_ram_size 显存大小
+ */
 static void pc_init1(ram_addr_t ram_size, int vga_ram_size,
                      const char *boot_device,
                      const char *kernel_filename, const char *kernel_cmdline,
@@ -844,7 +848,7 @@ static void pc_init1(ram_addr_t ram_size, int vga_ram_size,
     vmport_init();
 
     /* allocate RAM */
-    ram_addr = qemu_ram_alloc(0xa0000);
+    ram_addr = qemu_ram_alloc(0xa0000); /* 640KB的常规内存 */
     cpu_register_physical_memory(0, 0xa0000, ram_addr);
 
     /* Allocate, even though we won't register, so we don't break the

@@ -127,12 +127,12 @@ typedef tcg_target_ulong TCGArg;
 typedef struct
 {
     int i32;
-} TCGv_i32;
+} TCGv_i32; /* 有符号的32位整数 */
 
 typedef struct
 {
     int i64;
-} TCGv_i64;
+} TCGv_i64; /* 有符号的64位整数 */
 
 #define MAKE_TCGV_I32(i) __extension__                  \
     ({ TCGv_i32 make_tcgv_tmp = {i}; make_tcgv_tmp;})
@@ -193,10 +193,10 @@ typedef enum {
     TCG_COND_GTU,
 } TCGCond;
 
-#define TEMP_VAL_DEAD  0
-#define TEMP_VAL_REG   1
-#define TEMP_VAL_MEM   2
-#define TEMP_VAL_CONST 3
+#define TEMP_VAL_DEAD  0 /* 此变量后续都不会再使用 */
+#define TEMP_VAL_REG   1 /* 寄存器变量 */
+#define TEMP_VAL_MEM   2 /* 内存变量 */
+#define TEMP_VAL_CONST 3 /* 常量 */
 
 /* XXX: optimize memory layout */
 typedef struct TCGTemp {
@@ -207,7 +207,7 @@ typedef struct TCGTemp {
     tcg_target_long val;
     int mem_reg;
     tcg_target_long mem_offset;
-    unsigned int fixed_reg:1;
+    unsigned int fixed_reg:1; /* 固定寄存器 */
     unsigned int mem_coherent:1;
     unsigned int mem_allocated:1;
     unsigned int temp_local:1; /* If true, the temp is saved accross
@@ -215,10 +215,11 @@ typedef struct TCGTemp {
                                   preserved accross basic blocks. */
     unsigned int temp_allocated:1; /* never used for code gen */
     /* index of next free temp of same base type, -1 if end */
-    int next_free_temp;
+    int next_free_temp; /* 记录下空闲的temp变量的标号 */
     const char *name;
 } TCGTemp;
 
+/* 辅助信息 */
 typedef struct TCGHelperInfo {
     tcg_target_ulong func;
     const char *name;
@@ -227,13 +228,15 @@ typedef struct TCGHelperInfo {
 typedef struct TCGContext TCGContext;
 
 struct TCGContext {
-    uint8_t *pool_cur, *pool_end;
-    TCGPool *pool_first, *pool_current;
+    uint8_t *pool_cur;
+    uint8_t *pool_end;
+    TCGPool *pool_first;
+    TCGPool *pool_current;
     TCGLabel *labels;
     int nb_labels;
     TCGTemp *temps; /* globals first, temps after */
-    int nb_globals;
-    int nb_temps;
+    int nb_globals; /* 全局变量的个数 */
+    int nb_temps; /* 临时变量的个数 */
     /* index of free temps, -1 if none */
     int first_free_temp[TCG_TYPE_COUNT * 2]; 
 
@@ -249,7 +252,7 @@ struct TCGContext {
     
     /* tells in which temporary a given register is. It does not take
        into account fixed registers */
-    int reg_to_temp[TCG_TARGET_NB_REGS];
+    int reg_to_temp[TCG_TARGET_NB_REGS]; /* 用于记录temp位于哪一个给定的寄存器之中 */
     TCGRegSet reserved_regs;
     tcg_target_long current_frame_offset;
     tcg_target_long frame_start;
@@ -357,6 +360,7 @@ void tcg_dump_info(FILE *f,
 #define TCG_CT_REG    0x01
 #define TCG_CT_CONST  0x02 /* any constant of register size */
 
+/* 参数限制 */
 typedef struct TCGArgConstraint {
     uint16_t ct;
     uint8_t alias_index;
@@ -374,7 +378,7 @@ typedef struct TCGArgConstraint {
 #define TCG_OPF_SIDE_EFFECTS 0x04 /* instruction has side effects : it
                                      cannot be removed if its output
                                      are not used */
-
+/* 操作定义 */
 typedef struct TCGOpDef {
     const char *name;
     uint8_t nb_oargs, nb_iargs, nb_cargs, nb_args;

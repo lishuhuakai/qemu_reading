@@ -895,6 +895,10 @@ void cpu_register_physical_memory_offset(target_phys_addr_t start_addr,
                                          ram_addr_t size,
                                          ram_addr_t phys_offset,
                                          ram_addr_t region_offset);
+/* 注册物理内存块
+ * @param start_addr 开始地址
+ * @param size 内存块大小
+ */
 static inline void cpu_register_physical_memory(target_phys_addr_t start_addr,
                                                 ram_addr_t size,
                                                 ram_addr_t phys_offset)

@@ -60,12 +60,15 @@
 
 //#define MACRO_TEST   1
 
-/* global register indexes */
+/* global register indexes 
+ * 全局寄存器索引
+ */
 static TCGv_ptr cpu_env;
+/* cpu_A0应该是一个内存变量 */
 static TCGv cpu_A0, cpu_cc_src, cpu_cc_dst, cpu_cc_tmp;
 static TCGv_i32 cpu_cc_op;
 /* local temps */
-static TCGv cpu_T[2], cpu_T3;
+static TCGv cpu_T[2], cpu_T3; /* T代表temp,也就是临时寄存器 */
 /* local register indexes (only used inside old micro ops) */
 static TCGv cpu_tmp0, cpu_tmp4;
 static TCGv_ptr cpu_ptr0, cpu_ptr1;
@@ -79,6 +82,7 @@ static TCGv cpu_tmp5, cpu_tmp6;
 static int x86_64_hregs;
 #endif
 
+/* 指令上下文 */
 typedef struct DisasContext {
     /* current insn context */
     int override; /* -1 if no override */
@@ -180,11 +184,12 @@ enum {
     OR_A0, /* temporary register used when doing address evaluation */
 };
 
+/* T0 = 0 */
 static inline void gen_op_movl_T0_0(void)
 {
     tcg_gen_movi_tl(cpu_T[0], 0);
 }
-
+/* mov_i32 t0, t1 ==> t0 = t1 */
 static inline void gen_op_movl_T0_im(int32_t val)
 {
     tcg_gen_movi_tl(cpu_T[0], val);
@@ -270,7 +275,10 @@ static inline void gen_op_andl_A0_ffff(void)
 #define REG_L_OFFSET 0
 #define REG_LH_OFFSET 4
 #endif
-
+/*
+ * @param reg 寄存器
+ * @param ot 操作数占用的长度
+ */
 static inline void gen_op_mov_reg_v(int ot, int reg, TCGv t0)
 {
     switch(ot) {
@@ -303,21 +311,22 @@ static inline void gen_op_mov_reg_v(int ot, int reg, TCGv t0)
 #endif
     }
 }
-
+/* reg = T0 */
 static inline void gen_op_mov_reg_T0(int ot, int reg)
 {
     gen_op_mov_reg_v(ot, reg, cpu_T[0]);
 }
-
+/* reg = T1 */
 static inline void gen_op_mov_reg_T1(int ot, int reg)
 {
     gen_op_mov_reg_v(ot, reg, cpu_T[1]);
 }
-
+/* reg = A0 */
 static inline void gen_op_mov_reg_A0(int size, int reg)
 {
     switch(size) {
     case 0:
+        /* cpuA0 = cpu_env + offset... */
         tcg_gen_st16_tl(cpu_A0, cpu_env, offsetof(CPUState, regs[reg]) + REG_W_OFFSET);
         break;
 #ifdef TARGET_X86_64
@@ -369,6 +378,7 @@ static inline void gen_op_movl_A0_reg(int reg)
 
 static inline void gen_op_addl_A0_im(int32_t val)
 {
+    /* cpu_A0 = cpu_A0 + val */
     tcg_gen_addi_tl(cpu_A0, cpu_A0, val);
 #ifdef TARGET_X86_64
     tcg_gen_andi_tl(cpu_A0, cpu_A0, 0xffffffff);
@@ -381,7 +391,8 @@ static inline void gen_op_addq_A0_im(int64_t val)
     tcg_gen_addi_tl(cpu_A0, cpu_A0, val);
 }
 #endif
-    
+
+/*  A0 = A0 + im */
 static void gen_add_A0_im(DisasContext *s, int val)
 {
 #ifdef TARGET_X86_64
@@ -391,7 +402,7 @@ static void gen_add_A0_im(DisasContext *s, int val)
 #endif
         gen_op_addl_A0_im(val);
 }
-
+/* T0 = T0 + T1 */
 static inline void gen_op_addl_T0_T1(void)
 {
     tcg_gen_add_tl(cpu_T[0], cpu_T[0], cpu_T[1]);
@@ -527,6 +538,7 @@ static inline void gen_op_lds_T0_A0(int idx)
     }
 }
 
+/* 为load指令生成字节码 */
 static inline void gen_op_ld_v(int idx, TCGv t0, TCGv a0)
 {
     int mem_index = (idx >> 2) - 1;
@@ -555,7 +567,7 @@ static inline void gen_op_ld_T0_A0(int idx)
 {
     gen_op_ld_v(idx, cpu_T[0], cpu_A0);
 }
-
+/* T0 = A0 */
 static inline void gen_op_ldu_T0_A0(int idx)
 {
     gen_op_ld_v(idx, cpu_T[0], cpu_A0);
@@ -569,7 +581,7 @@ static inline void gen_op_ld_T1_A0(int idx)
 static inline void gen_op_st_v(int idx, TCGv t0, TCGv a0)
 {
     int mem_index = (idx >> 2) - 1;
-    switch(idx & 3) {
+    switch(idx & 3) { /* 存储的值的长度 */
     case 0:
         tcg_gen_qemu_st8(t0, a0, mem_index);
         break;
@@ -588,7 +600,7 @@ static inline void gen_op_st_v(int idx, TCGv t0, TCGv a0)
         break;
     }
 }
-
+/* 生成存储指令 */
 static inline void gen_op_st_T0_A0(int idx)
 {
     gen_op_st_v(idx, cpu_T[0], cpu_A0);
@@ -598,7 +610,9 @@ static inline void gen_op_st_T1_A0(int idx)
 {
     gen_op_st_v(idx, cpu_T[1], cpu_A0);
 }
-
+/* 生成跳转指令
+ * @param pc 要跳转到的地址
+ */
 static inline void gen_jmp_im(target_ulong pc)
 {
     tcg_gen_movi_tl(cpu_tmp0, pc);
@@ -1301,13 +1315,18 @@ static void gen_helper_fp_arith_STN_ST0(int op, int opreg)
     }
 }
 
-/* if d == OR_TMP0, it means memory operand (address in A0) */
+/* if d == OR_TMP0, it means memory operand (address in A0) 
+ * 如果d == OR_TMP0,那么说明是一个内存操作数
+ */
 static void gen_op(DisasContext *s1, int op, int ot, int d)
 {
+    /* 首先将第一个操作数加载到T0寄存器 
+     * 第二个操作数已经位于T1寄存器
+     */
     if (d != OR_TMP0) {
-        gen_op_mov_TN_reg(ot, 0, d);
+        gen_op_mov_TN_reg(ot, 0, d); /* T0 = reg */
     } else {
-        gen_op_ld_T0_A0(ot + s1->mem_index);
+        gen_op_ld_T0_A0(ot + s1->mem_index); /* T0= read(A0),操作数1加载到T0寄存器 */
     }
     switch(op) {
     case OP_ADCL:
@@ -1344,17 +1363,17 @@ static void gen_op(DisasContext *s1, int op, int ot, int d)
         tcg_gen_addi_i32(cpu_cc_op, cpu_tmp2_i32, CC_OP_SUBB + ot);
         s1->cc_op = CC_OP_DYNAMIC;
         break;
-    case OP_ADDL:
-        gen_op_addl_T0_T1();
+    case OP_ADDL: /* 加法指令 */
+        gen_op_addl_T0_T1(); /* T0 -= T1 */
         if (d != OR_TMP0)
-            gen_op_mov_reg_T0(ot, d);
+            gen_op_mov_reg_T0(ot, d); /* reg[d] = T0 */
         else
-            gen_op_st_T0_A0(ot + s1->mem_index);
+            gen_op_st_T0_A0(ot + s1->mem_index); /* 将结果存储到A0指示的地址中去 */
         gen_op_update2_cc();
         s1->cc_op = CC_OP_ADDB + ot;
         break;
-    case OP_SUBL:
-        tcg_gen_sub_tl(cpu_T[0], cpu_T[0], cpu_T[1]);
+    case OP_SUBL: /* 减法指令 */
+        tcg_gen_sub_tl(cpu_T[0], cpu_T[0], cpu_T[1]); /* T0 -= T1 */
         if (d != OR_TMP0)
             gen_op_mov_reg_T0(ot, d);
         else
@@ -1397,22 +1416,28 @@ static void gen_op(DisasContext *s1, int op, int ot, int d)
     }
 }
 
-/* if d == OR_TMP0, it means memory operand (address in A0) */
+/* if d == OR_TMP0, it means memory operand (address in A0)
+ * 如果d == OR_TMP0, 那么说明操作数0是一个内存操作数(A0是操作数0的地址)
+ * 为自增/自减生成指令
+ * @param c 增加的值
+ */
 static void gen_inc(DisasContext *s1, int ot, int d, int c)
 {
+    /* 首先将值加载到T0寄存器 */
     if (d != OR_TMP0)
-        gen_op_mov_TN_reg(ot, 0, d);
+        gen_op_mov_TN_reg(ot, 0, d); /* T0 = reg[d] */
     else
         gen_op_ld_T0_A0(ot + s1->mem_index);
     if (s1->cc_op != CC_OP_DYNAMIC)
         gen_op_set_cc_op(s1->cc_op);
-    if (c > 0) {
-        tcg_gen_addi_tl(cpu_T[0], cpu_T[0], 1);
+    if (c > 0) { /* 自增 */
+        tcg_gen_addi_tl(cpu_T[0], cpu_T[0], 1); /* T0 += 1 */
         s1->cc_op = CC_OP_INCB + ot;
-    } else {
-        tcg_gen_addi_tl(cpu_T[0], cpu_T[0], -1);
+    } else { /* 自减 */
+        tcg_gen_addi_tl(cpu_T[0], cpu_T[0], -1); /* T0 -= 1 */
         s1->cc_op = CC_OP_DECB + ot;
     }
+    /* 将计算后的结果存储到源操作数中去 */
     if (d != OR_TMP0)
         gen_op_mov_reg_T0(ot, d);
     else
@@ -1560,7 +1585,7 @@ static void gen_rot_rm_T1(DisasContext *s, int ot, int op1,
     TCGv t0, t1, t2, a0;
 
     /* XXX: inefficient, but we must use local temps */
-    t0 = tcg_temp_local_new();
+    t0 = tcg_temp_local_new(); /* 这里应该不是寄存器变量 */
     t1 = tcg_temp_local_new();
     t2 = tcg_temp_local_new();
     a0 = tcg_temp_local_new();
@@ -1572,13 +1597,13 @@ static void gen_rot_rm_T1(DisasContext *s, int ot, int op1,
 
     /* load */
     if (op1 == OR_TMP0) {
-        tcg_gen_mov_tl(a0, cpu_A0);
-        gen_op_ld_v(ot + s->mem_index, t0, a0);
+        tcg_gen_mov_tl(a0, cpu_A0); /* a0 = A0 */
+        gen_op_ld_v(ot + s->mem_index, t0, a0); /* 加载到t0之中 */
     } else {
-        gen_op_mov_v_reg(ot, t0, op1);
+        gen_op_mov_v_reg(ot, t0, op1); /* op1加载到t0之中 */
     }
 
-    tcg_gen_mov_tl(t1, cpu_T[1]);
+    tcg_gen_mov_tl(t1, cpu_T[1]); /* t1 = T1 */
 
     tcg_gen_andi_tl(t1, t1, mask);
 
@@ -1828,11 +1853,11 @@ static void gen_shiftd_rm_T1_T3(DisasContext *s, int ot, int op1,
     tcg_temp_free(t2);
     tcg_temp_free(a0);
 }
-
+/* 为shift生成翻译指令 */
 static void gen_shift(DisasContext *s1, int op, int ot, int d, int s)
 {
     if (s != OR_TMP1)
-        gen_op_mov_TN_reg(ot, 1, s);
+        gen_op_mov_TN_reg(ot, 1, s); /* T1 = reg(s) */
     switch(op) {
     case OP_ROL:
         gen_rot_rm_T1(s1, ot, d, 0);
@@ -1879,7 +1904,7 @@ static void gen_shifti(DisasContext *s1, int op, int ot, int d, int c)
         break;
     }
 }
-
+/* 将第二个操作数加载到A0 */
 static void gen_lea_modrm(DisasContext *s, int modrm, int *reg_ptr, int *offset_ptr)
 {
     target_long disp;
@@ -1927,7 +1952,7 @@ static void gen_lea_modrm(DisasContext *s, int modrm, int *reg_ptr, int *offset_
             }
             break;
         case 1:
-            disp = (int8_t)ldub_code(s->pc++);
+            disp = (int8_t)ldub_code(s->pc++); /*  load */
             break;
         default:
         case 2:
@@ -2140,32 +2165,38 @@ static void gen_add_A0_ds_seg(DisasContext *s)
 
 /* generate modrm memory load or store of 'reg'. TMP0 is used if reg ==
    OR_TMP0 */
+/* 如果reg == OR_TMP0,那么TMP0被使用,这个应该是一个内存操作数
+ * reg中数据的加载/存储
+ * @param is_store 如果为1,表示存储,0表示加载
+ * @param reg 用于指示操作数所在的位置
+ */
 static void gen_ldst_modrm(DisasContext *s, int modrm, int ot, int reg, int is_store)
 {
     int mod, rm, opreg, disp;
 
-    mod = (modrm >> 6) & 3;
+    mod = (modrm >> 6) & 3; /* mod是寻址模式 */
     rm = (modrm & 7) | REX_B(s);
-    if (mod == 3) {
-        if (is_store) {
+    if (mod == 3) { /* 寄存器直接寻址 */
+        if (is_store) { /*存储 */
             if (reg != OR_TMP0)
-                gen_op_mov_TN_reg(ot, 0, reg);
-            gen_op_mov_reg_T0(ot, rm);
+                gen_op_mov_TN_reg(ot, 0, reg); /* T0 = reg */
+            /* rm用于指示第2个寄存器 */
+            gen_op_mov_reg_T0(ot, rm); /* rm = T0 */
         } else {
-            gen_op_mov_TN_reg(ot, 0, rm);
+            gen_op_mov_TN_reg(ot, 0, rm); /* T0 = rm */
             if (reg != OR_TMP0)
-                gen_op_mov_reg_T0(ot, reg);
+                gen_op_mov_reg_T0(ot, reg); /* reg = T0 */
         }
     } else {
         gen_lea_modrm(s, modrm, &opreg, &disp);
         if (is_store) {
             if (reg != OR_TMP0)
-                gen_op_mov_TN_reg(ot, 0, reg);
-            gen_op_st_T0_A0(ot + s->mem_index);
+                gen_op_mov_TN_reg(ot, 0, reg); /* T0 = reg */
+            gen_op_st_T0_A0(ot + s->mem_index); /* 将T0存储到A0指示的地址中去 */
         } else {
-            gen_op_ld_T0_A0(ot + s->mem_index);
+            gen_op_ld_T0_A0(ot + s->mem_index); /* 将A0指示的内存数据加载到T0中 */
             if (reg != OR_TMP0)
-                gen_op_mov_reg_T0(ot, reg);
+                gen_op_mov_reg_T0(ot, reg); /* reg = T0 */
         }
     }
 }
@@ -2364,7 +2395,9 @@ static inline void gen_stack_update(DisasContext *s, int addend)
     }
 }
 
-/* generate a push. It depends on ss32, addseg and dflag */
+/* generate a push. It depends on ss32, addseg and dflag 
+ * 为push生成指令
+ */
 static void gen_push_T0(DisasContext *s)
 {
 #ifdef TARGET_X86_64
@@ -2381,31 +2414,34 @@ static void gen_push_T0(DisasContext *s)
     } else
 #endif
     {
-        gen_op_movl_A0_reg(R_ESP);
+        /* 将ESP寄存器的值压栈 */
+        gen_op_movl_A0_reg(R_ESP); /* esp的值写入A0指向的地址 */
+        /* 更改A0的值 */
         if (!s->dflag)
-            gen_op_addl_A0_im(-2);
+            gen_op_addl_A0_im(-2); 
         else
             gen_op_addl_A0_im(-4);
         if (s->ss32) {
             if (s->addseg) {
-                tcg_gen_mov_tl(cpu_T[1], cpu_A0);
+                tcg_gen_mov_tl(cpu_T[1], cpu_A0); /* T1 = A0 */
                 gen_op_addl_A0_seg(R_SS);
             }
         } else {
             gen_op_andl_A0_ffff();
-            tcg_gen_mov_tl(cpu_T[1], cpu_A0);
-            gen_op_addl_A0_seg(R_SS);
+            tcg_gen_mov_tl(cpu_T[1], cpu_A0); /* A0的值存储到T1 */
+            gen_op_addl_A0_seg(R_SS); /* 这里其实会修改A0的值 */
         }
-        gen_op_st_T0_A0(s->dflag + 1 + s->mem_index);
+        gen_op_st_T0_A0(s->dflag + 1 + s->mem_index); /* T0的值写入A0指示的地址 */
         if (s->ss32 && !s->addseg)
-            gen_op_mov_reg_A0(1, R_ESP);
+            gen_op_mov_reg_A0(1, R_ESP); /* A0的值存储到ESP */
         else
-            gen_op_mov_reg_T1(s->ss32 + 1, R_ESP);
+            gen_op_mov_reg_T1(s->ss32 + 1, R_ESP); /* T1的值存储到ESP */
     }
 }
 
 /* generate a push. It depends on ss32, addseg and dflag */
 /* slower version for T1, only used for call Ev */
+/* 为push生成指令 */
 static void gen_push_T1(DisasContext *s)
 {
 #ifdef TARGET_X86_64
@@ -2422,7 +2458,7 @@ static void gen_push_T1(DisasContext *s)
     } else
 #endif
     {
-        gen_op_movl_A0_reg(R_ESP);
+        gen_op_movl_A0_reg(R_ESP); /* 先将ESP -> A0指向的地址 */
         if (!s->dflag)
             gen_op_addl_A0_im(-2);
         else
@@ -2432,19 +2468,20 @@ static void gen_push_T1(DisasContext *s)
                 gen_op_addl_A0_seg(R_SS);
             }
         } else {
-            gen_op_andl_A0_ffff();
+            gen_op_andl_A0_ffff(); /* A0 = A0 & 0xffff */
             gen_op_addl_A0_seg(R_SS);
         }
-        gen_op_st_T1_A0(s->dflag + 1 + s->mem_index);
+        gen_op_st_T1_A0(s->dflag + 1 + s->mem_index); /* T1 -> A0指向的地址 */
 
         if (s->ss32 && !s->addseg)
-            gen_op_mov_reg_A0(1, R_ESP);
+            gen_op_mov_reg_A0(1, R_ESP); /* A0 -> ESP */
         else
             gen_stack_update(s, (-2) << s->dflag);
     }
 }
 
 /* two step pop is necessary for precise exceptions */
+/* 为pop生成指令 */
 static void gen_pop_T0(DisasContext *s)
 {
 #ifdef TARGET_X86_64
@@ -2454,15 +2491,16 @@ static void gen_pop_T0(DisasContext *s)
     } else
 #endif
     {
-        gen_op_movl_A0_reg(R_ESP);
+        gen_op_movl_A0_reg(R_ESP); /* A0 = ESP, 读取栈顶的地址 */
         if (s->ss32) {
             if (s->addseg)
                 gen_op_addl_A0_seg(R_SS);
         } else {
-            gen_op_andl_A0_ffff();
+            gen_op_andl_A0_ffff(); /* A0 = A0 & 0xffff */
             gen_op_addl_A0_seg(R_SS);
         }
-        gen_op_ld_T0_A0(s->dflag + 1 + s->mem_index);
+        /* 读取出栈顶的元素 */
+        gen_op_ld_T0_A0(s->dflag + 1 + s->mem_index); /* T0 = read(A0) */
     }
 }
 
@@ -2561,25 +2599,25 @@ static void gen_enter(DisasContext *s, int esp_addend, int level)
         ot = s->dflag + OT_WORD;
         opsize = 2 << s->dflag;
 
-        gen_op_movl_A0_reg(R_ESP);
+        gen_op_movl_A0_reg(R_ESP); /* A0 = ESP */
         gen_op_addl_A0_im(-opsize);
         if (!s->ss32)
             gen_op_andl_A0_ffff();
-        tcg_gen_mov_tl(cpu_T[1], cpu_A0);
+        tcg_gen_mov_tl(cpu_T[1], cpu_A0); /* T1 = A0 */
         if (s->addseg)
             gen_op_addl_A0_seg(R_SS);
         /* push bp */
-        gen_op_mov_TN_reg(OT_LONG, 0, R_EBP);
-        gen_op_st_T0_A0(ot + s->mem_index);
+        gen_op_mov_TN_reg(OT_LONG, 0, R_EBP); /* T0 = EBP */
+        gen_op_st_T0_A0(ot + s->mem_index); /* 将T0的值存储到A0指示的地址 */
         if (level) {
             /* XXX: must save state */
             gen_helper_enter_level(tcg_const_i32(level),
                                    tcg_const_i32(s->dflag),
                                    cpu_T[1]);
         }
-        gen_op_mov_reg_T1(ot, R_EBP);
+        gen_op_mov_reg_T1(ot, R_EBP); /* EBP = T1 */
         tcg_gen_addi_tl(cpu_T[1], cpu_T[1], -esp_addend + (-opsize * level));
-        gen_op_mov_reg_T1(OT_WORD + s->ss32, R_ESP);
+        gen_op_mov_reg_T1(OT_WORD + s->ss32, R_ESP); /* ESP = T1 */
     }
 }
 
@@ -3953,6 +3991,7 @@ static void gen_sse(DisasContext *s, int b, target_ulong pc_start, int rex_r)
 
 /* convert one instruction. s->is_jmp is set if the translation must
    be stopped. Return the next pc value */
+/* 转换1条指令,如果翻译必须要停止的话,she这s->is_jmp */
 static target_ulong disas_insn(DisasContext *s, target_ulong pc_start)
 {
     int b, prefixes, aflag, dflag;
@@ -4087,7 +4126,7 @@ static target_ulong disas_insn(DisasContext *s, target_ulong pc_start)
         gen_helper_lock();
 
     /* now check op code */
- reswitch:
+ reswitch: /* 检查op code,也就是操作码 */
     switch(b) {
     case 0x0f:
         /**************************/
@@ -4107,55 +4146,57 @@ static target_ulong disas_insn(DisasContext *s, target_ulong pc_start)
     case 0x38 ... 0x3d:
         {
             int op, f, val;
-            op = (b >> 3) & 7;
+            op = (b >> 3) & 7; /* 操作符 */
             f = (b >> 1) & 3;
 
             if ((b & 1) == 0)
-                ot = OT_BYTE;
+                ot = OT_BYTE; /* ot表示操作符长度 */
             else
                 ot = dflag + OT_WORD;
-
+            /* Ev 4字节内存
+             * Gv 32位或者8位寄存器
+             */
             switch(f) {
             case 0: /* OP Ev, Gv */
                 modrm = ldub_code(s->pc++);
-                reg = ((modrm >> 3) & 7) | rex_r;
-                mod = (modrm >> 6) & 3;
-                rm = (modrm & 7) | REX_B(s);
-                if (mod != 3) {
+                reg = ((modrm >> 3) & 7) | rex_r; /* 读取reg字段 */
+                mod = (modrm >> 6) & 3; /* 读取mod字段 */
+                rm = (modrm & 7) | REX_B(s); /* 读取rm字段 */
+                if (mod != 3) { /* mod为3表示直接寻址 */
                     gen_lea_modrm(s, modrm, &reg_addr, &offset_addr);
                     opreg = OR_TMP0;
                 } else if (op == OP_XORL && rm == reg) {
                 xor_zero:
                     /* xor reg, reg optimisation */
-                    gen_op_movl_T0_0();
+                    gen_op_movl_T0_0(); /* T0 = 0 */
                     s->cc_op = CC_OP_LOGICB + ot;
-                    gen_op_mov_reg_T0(ot, reg);
-                    gen_op_update1_cc();
+                    gen_op_mov_reg_T0(ot, reg); /* reg = T0 */
+                    gen_op_update1_cc(); /* cpu_cc_dst = T0 */
                     break;
                 } else {
                     opreg = rm;
                 }
-                gen_op_mov_TN_reg(ot, 1, reg);
+                gen_op_mov_TN_reg(ot, 1, reg); /* T1 = reg */
                 gen_op(s, op, ot, opreg);
                 break;
             case 1: /* OP Gv, Ev */
                 modrm = ldub_code(s->pc++);
                 mod = (modrm >> 6) & 3;
-                reg = ((modrm >> 3) & 7) | rex_r;
+                reg = ((modrm >> 3) & 7) | rex_r; /* 读取出使用的寄存器 */
                 rm = (modrm & 7) | REX_B(s);
                 if (mod != 3) {
                     gen_lea_modrm(s, modrm, &reg_addr, &offset_addr);
-                    gen_op_ld_T1_A0(ot + s->mem_index);
+                    gen_op_ld_T1_A0(ot + s->mem_index); /* 加载指令, T1 = read(A0) */
                 } else if (op == OP_XORL && rm == reg) {
                     goto xor_zero;
-                } else {
-                    gen_op_mov_TN_reg(ot, 1, rm);
+                } else { /* 第2个操作数在rm指示的寄存器之中 */
+                    gen_op_mov_TN_reg(ot, 1, rm); /* T1 = reg */
                 }
                 gen_op(s, op, ot, reg);
                 break;
             case 2: /* OP A, Iv */
-                val = insn_get(s, ot);
-                gen_op_movl_T1_im(val);
+                val = insn_get(s, ot); /* 从指令中读取出立即数val,也就是Iv */
+                gen_op_movl_T1_im(val); /* T1 = im */
                 gen_op(s, op, ot, OR_EAX);
                 break;
             }
@@ -4186,7 +4227,7 @@ static target_ulong disas_insn(DisasContext *s, target_ulong pc_start)
                     s->rip_offset = 1;
                 else
                     s->rip_offset = insn_const_size(ot);
-                gen_lea_modrm(s, modrm, &reg_addr, &offset_addr);
+                gen_lea_modrm(s, modrm, &reg_addr, &offset_addr); /* 操作数加载到A0 */
                 opreg = OR_TMP0;
             } else {
                 opreg = rm;
@@ -4203,7 +4244,7 @@ static target_ulong disas_insn(DisasContext *s, target_ulong pc_start)
                 val = (int8_t)insn_get(s, OT_BYTE);
                 break;
             }
-            gen_op_movl_T1_im(val);
+            gen_op_movl_T1_im(val); /* 将立即数转移到T1寄存器 */
             gen_op(s, op, ot, opreg);
         }
         break;
@@ -4211,11 +4252,11 @@ static target_ulong disas_insn(DisasContext *s, target_ulong pc_start)
         /**************************/
         /* inc, dec, and other misc arith */
     case 0x40 ... 0x47: /* inc Gv */
-        ot = dflag ? OT_LONG : OT_WORD;
+        ot = dflag ? OT_LONG : OT_WORD; /* 自增 */
         gen_inc(s, ot, OR_EAX + (b & 7), 1);
         break;
     case 0x48 ... 0x4f: /* dec Gv */
-        ot = dflag ? OT_LONG : OT_WORD;
+        ot = dflag ? OT_LONG : OT_WORD; /* 自减 */
         gen_inc(s, ot, OR_EAX + (b & 7), -1);
         break;
     case 0xf6: /* GRP3 */
@@ -4246,7 +4287,8 @@ static target_ulong disas_insn(DisasContext *s, target_ulong pc_start)
             s->cc_op = CC_OP_LOGICB + ot;
             break;
         case 2: /* not */
-            tcg_gen_not_tl(cpu_T[0], cpu_T[0]);
+            tcg_gen_not_tl(cpu_T[0], cpu_T[0]); /* T0 = ~ T0 */
+            /* 将结果存储到源操作数中去 */
             if (mod != 3) {
                 gen_op_st_T0_A0(ot + s->mem_index);
             } else {
@@ -4254,7 +4296,8 @@ static target_ulong disas_insn(DisasContext *s, target_ulong pc_start)
             }
             break;
         case 3: /* neg */
-            tcg_gen_neg_tl(cpu_T[0], cpu_T[0]);
+            tcg_gen_neg_tl(cpu_T[0], cpu_T[0]); /* T0 = -T0 */
+            /* 将结果存储到源操作数中去 */
             if (mod != 3) {
                 gen_op_st_T0_A0(ot + s->mem_index);
             } else {
@@ -4266,12 +4309,12 @@ static target_ulong disas_insn(DisasContext *s, target_ulong pc_start)
         case 4: /* mul */
             switch(ot) {
             case OT_BYTE:
-                gen_op_mov_TN_reg(OT_BYTE, 1, R_EAX);
+                gen_op_mov_TN_reg(OT_BYTE, 1, R_EAX); /* T1 = EAX */
                 tcg_gen_ext8u_tl(cpu_T[0], cpu_T[0]);
                 tcg_gen_ext8u_tl(cpu_T[1], cpu_T[1]);
                 /* XXX: use 32 bit mul which could be faster */
-                tcg_gen_mul_tl(cpu_T[0], cpu_T[0], cpu_T[1]);
-                gen_op_mov_reg_T0(OT_WORD, R_EAX);
+                tcg_gen_mul_tl(cpu_T[0], cpu_T[0], cpu_T[1]); /* T0 = T0 * T1 */
+                gen_op_mov_reg_T0(OT_WORD, R_EAX); /* EAX = T0 */
                 tcg_gen_mov_tl(cpu_cc_dst, cpu_T[0]);
                 tcg_gen_andi_tl(cpu_cc_src, cpu_T[0], 0xff00);
                 s->cc_op = CC_OP_MULB;
@@ -4501,13 +4544,14 @@ static target_ulong disas_insn(DisasContext *s, target_ulong pc_start)
             gen_inc(s, ot, opreg, -1);
             break;
         case 2: /* call Ev */
+            /* 函数调用 */
             /* XXX: optimize if memory (no 'and' is necessary) */
             if (s->dflag == 0)
                 gen_op_andl_T0_ffff();
             next_eip = s->pc - s->cs_base;
-            gen_movtl_T1_im(next_eip);
-            gen_push_T1(s);
-            gen_op_jmp_T0();
+            gen_movtl_T1_im(next_eip); /* T1中记录返回地址 */
+            gen_push_T1(s); /* 将T1压栈 */
+            gen_op_jmp_T0(); /* 跳转到T0 */
             gen_eob(s);
             break;
         case 3: /* lcall Ev */
@@ -4533,8 +4577,8 @@ static target_ulong disas_insn(DisasContext *s, target_ulong pc_start)
             break;
         case 4: /* jmp Ev */
             if (s->dflag == 0)
-                gen_op_andl_T0_ffff();
-            gen_op_jmp_T0();
+                gen_op_andl_T0_ffff(); /* T0 = T0 & 0xffff */
+            gen_op_jmp_T0(); /* 跳转到T0 */
             gen_eob(s);
             break;
         case 5: /* ljmp Ev */
@@ -4544,7 +4588,7 @@ static target_ulong disas_insn(DisasContext *s, target_ulong pc_start)
         do_ljmp:
             if (s->pe && !s->vm86) {
                 if (s->cc_op != CC_OP_DYNAMIC)
-                    gen_op_set_cc_op(s->cc_op);
+                    gen_op_set_cc_op(s->cc_op); /* 将s->cc_op的值保存起来-> cpu_c_op */
                 gen_jmp_im(pc_start - s->cs_base);
                 tcg_gen_trunc_tl_i32(cpu_tmp2_i32, cpu_T[0]);
                 gen_helper_ljmp_protected(cpu_tmp2_i32, cpu_T[1],
@@ -4809,8 +4853,8 @@ static target_ulong disas_insn(DisasContext *s, target_ulong pc_start)
         /**************************/
         /* push/pop */
     case 0x50 ... 0x57: /* push */
-        gen_op_mov_TN_reg(OT_LONG, 0, (b & 7) | REX_B(s));
-        gen_push_T0(s);
+        gen_op_mov_TN_reg(OT_LONG, 0, (b & 7) | REX_B(s)); /* T0 = reg */
+        gen_push_T0(s); /* 然后将T0压栈 */
         break;
     case 0x58 ... 0x5f: /* pop */
         if (CODE64(s)) {
@@ -4818,10 +4862,10 @@ static target_ulong disas_insn(DisasContext *s, target_ulong pc_start)
         } else {
             ot = dflag + OT_WORD;
         }
-        gen_pop_T0(s);
+        gen_pop_T0(s); /* 将栈顶元素放入T0寄存器 */
         /* NOTE: order is important for pop %sp */
         gen_pop_update(s);
-        gen_op_mov_reg_T0(ot, (b & 7) | REX_B(s));
+        gen_op_mov_reg_T0(ot, (b & 7) | REX_B(s)); /* reg = T0 */
         break;
     case 0x60: /* pusha */
         if (CODE64(s))
@@ -4841,11 +4885,11 @@ static target_ulong disas_insn(DisasContext *s, target_ulong pc_start)
             ot = dflag + OT_WORD;
         }
         if (b == 0x68)
-            val = insn_get(s, ot);
+            val = insn_get(s, ot); /* 读取出立即数的值 */
         else
             val = (int8_t)insn_get(s, OT_BYTE);
-        gen_op_movl_T0_im(val);
-        gen_push_T0(s);
+        gen_op_movl_T0_im(val); /* T0 = im */
+        gen_push_T0(s); /* 将T0压栈 */
         break;
     case 0x8f: /* pop Ev */
         if (CODE64(s)) {
@@ -4958,6 +5002,7 @@ static target_ulong disas_insn(DisasContext *s, target_ulong pc_start)
         reg = ((modrm >> 3) & 7) | rex_r;
 
         /* generate a generic store */
+        /* 产生一条通用的store指令 */
         gen_ldst_modrm(s, modrm, ot, reg, 1);
         break;
     case 0xc6:
@@ -5265,6 +5310,7 @@ static target_ulong disas_insn(DisasContext *s, target_ulong pc_start)
                 if (shift == 2) {
                     s->rip_offset = 1;
                 }
+                /* 先将操作数加载到A0 */
                 gen_lea_modrm(s, modrm, &reg_addr, &offset_addr);
                 opreg = OR_TMP0;
             } else {
@@ -7523,6 +7569,10 @@ void optimize_flags_init(void)
 /* generate intermediate code in gen_opc_buf and gen_opparam_buf for
    basic block 'tb'. If search_pc is TRUE, also generate PC
    information for each intermediate instruction. */
+/* 中间指令生成,如果search_pc为TRUE,那么为每一条中间指令生成PC 信息
+ * @param env cpu实例指针
+ * @param tb
+ */
 static inline void gen_intermediate_code_internal(CPUState *env,
                                                   TranslationBlock *tb,
                                                   int search_pc)
@@ -7586,7 +7636,7 @@ static inline void gen_intermediate_code_internal(CPUState *env,
     if (!dc->addseg && (dc->vm86 || !dc->pe || !dc->code32))
         printf("ERROR addseg\n");
 #endif
-
+    /* 分配一个临时变量 */
     cpu_T[0] = tcg_temp_new();
     cpu_T[1] = tcg_temp_new();
     cpu_A0 = tcg_temp_new();
@@ -7601,11 +7651,11 @@ static inline void gen_intermediate_code_internal(CPUState *env,
     cpu_tmp6 = tcg_temp_new();
     cpu_ptr0 = tcg_temp_new_ptr();
     cpu_ptr1 = tcg_temp_new_ptr();
-
-    gen_opc_end = gen_opc_buf + OPC_MAX_SIZE;
+    /* gen_opc_buf是数组首地址 */
+    gen_opc_end = gen_opc_buf + OPC_MAX_SIZE; /* 数组尾部 */
 
     dc->is_jmp = DISAS_NEXT;
-    pc_ptr = pc_start;
+    pc_ptr = pc_start; /* 开始译码的位置 */
     lj = -1;
     num_insns = 0;
     max_insns = tb->cflags & CF_COUNT_MASK;
@@ -7696,7 +7746,7 @@ static inline void gen_intermediate_code_internal(CPUState *env,
         tb->icount = num_insns;
     }
 }
-
+/* 中间指令生成 */
 void gen_intermediate_code(CPUState *env, TranslationBlock *tb)
 {
     gen_intermediate_code_internal(env, tb, 0);
@@ -7717,7 +7767,7 @@ void gen_pc_load(CPUState *env, TranslationBlock *tb,
         qemu_log("RESTORE:\n");
         for(i = 0;i <= pc_pos; i++) {
             if (gen_opc_instr_start[i]) {
-                qemu_log("0x%04x: " TARGET_FMT_lx "\n", i, gen_opc_pc[i]);
+                qemu_log("0x%04x: " TARGET_FMT_lx "\n", i, gen_opc_pc[i]); /* 输出操作码 */
             }
         }
         qemu_log("spc=0x%08lx pc_pos=0x%x eip=" TARGET_FMT_lx " cs_base=%x\n",

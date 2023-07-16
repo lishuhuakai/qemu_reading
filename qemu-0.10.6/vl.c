@@ -278,6 +278,10 @@ PicState2 *isa_pic;
 static IOPortReadFunc default_ioport_readb, default_ioport_readw, default_ioport_readl;
 static IOPortWriteFunc default_ioport_writeb, default_ioport_writew, default_ioport_writel;
 
+/* 执行io读操作
+ * @param index 要读取的数据的宽度,0表示byte, 1表示word,2表示long
+ * @param address 要读取的地址
+ */
 static uint32_t ioport_read(int index, uint32_t address)
 {
     static IOPortReadFunc *default_func[3] = {
@@ -291,9 +295,14 @@ static uint32_t ioport_read(int index, uint32_t address)
     return func(ioport_opaque[address], address);
 }
 
+/* 执行io写操作
+ * @param address 需要写入的地址
+ * @param data 需要写入的数据
+ * @param index 用于指示写入数据的宽度,0表示byte, 1表示word,2表示long
+ */
 static void ioport_write(int index, uint32_t address, uint32_t data)
 {
-    static IOPortWriteFunc *default_func[3] = {
+    static IOPortWriteFunc *default_func[3] = { /* 默认写函数 */
         default_ioport_writeb,
         default_ioport_writew,
         default_ioport_writel
@@ -377,6 +386,13 @@ int register_ioport_read(int start, int length, int size,
 }
 
 /* size is the word size in byte */
+/* 注册io写回调函数
+ * @param start 物理地址
+ * @param length 长度
+ * @param size 要写数据的大小
+ * @param func 回调函数
+ * @param opaque 将会传递给回调函数的私有数据
+ */
 int register_ioport_write(int start, int length, int size,
                           IOPortWriteFunc *func, void *opaque)
 {
@@ -423,7 +439,7 @@ void isa_unassign_ioport(int start, int length)
 void cpu_outb(CPUState *env, int addr, int val)
 {
     LOG_IOPORT("outb: %04x %02x\n", addr, val);
-    ioport_write(0, addr, val);
+    ioport_write(0, addr, val); /* cpu进行io写操作 */
 #ifdef USE_KQEMU
     if (env)
         env->last_io_time = cpu_get_time_fast();
@@ -4667,7 +4683,7 @@ int main(int argc, char **argv, char **envp)
     gdbstub_port = DEFAULT_GDBSTUB_PORT;
 #endif
     snapshot = 0;
-    nographic = 0;
+    nographic = 0; /* 如果为1,表示不使用图形化界面 */
     curses = 0;
     kernel_filename = NULL;
     kernel_cmdline = "";
@@ -5075,7 +5091,7 @@ int main(int argc, char **argv, char **envp)
                 serial_devices[serial_device_index] = optarg;
                 serial_device_index++;
                 break;
-            case QEMU_OPTION_virtiocon:
+            case QEMU_OPTION_virtiocon: /* 虚拟console */
                 if (virtio_console_index >= MAX_VIRTIO_CONSOLES) {
                     fprintf(stderr, "qemu: too many virtio consoles\n");
                     exit(1);
@@ -5091,9 +5107,9 @@ int main(int argc, char **argv, char **envp)
                 parallel_devices[parallel_device_index] = optarg;
                 parallel_device_index++;
                 break;
-	    case QEMU_OPTION_loadvm:
-		loadvm = optarg;
-		break;
+            case QEMU_OPTION_loadvm:
+                loadvm = optarg;
+                break;
             case QEMU_OPTION_full_screen:
                 full_screen = 1;
                 break;
@@ -5163,9 +5179,9 @@ int main(int argc, char **argv, char **envp)
                     exit(1);
                 }
                 break;
-	    case QEMU_OPTION_vnc:
-		vnc_display = optarg;
-		break;
+            case QEMU_OPTION_vnc:
+                vnc_display = optarg;
+                break;
             case QEMU_OPTION_no_acpi:
                 acpi_enabled = 0;
                 break;
@@ -5188,17 +5204,17 @@ int main(int argc, char **argv, char **envp)
                     exit(1);
                 }
                 break;
-	    case QEMU_OPTION_daemonize:
-		daemonize = 1;
-		break;
-	    case QEMU_OPTION_option_rom:
-		if (nb_option_roms >= MAX_OPTION_ROMS) {
-		    fprintf(stderr, "Too many option ROMs\n");
-		    exit(1);
-		}
-		option_rom[nb_option_roms] = optarg;
-		nb_option_roms++;
-		break;
+            case QEMU_OPTION_daemonize:
+                daemonize = 1;
+                break;
+            case QEMU_OPTION_option_rom:
+                if (nb_option_roms >= MAX_OPTION_ROMS) {
+                    fprintf(stderr, "Too many option ROMs\n");
+                    exit(1);
+                }
+                option_rom[nb_option_roms] = optarg;
+                nb_option_roms++;
+                break;
             case QEMU_OPTION_semihosting:
                 semihosting_enabled = 1;
                 break;
@@ -5303,7 +5319,7 @@ int main(int argc, char **argv, char **envp)
         exit(1);
     }
 
-    if (nographic) {
+    if (nographic) { /* 如果不使用图形化界面 */
        if (serial_device_index == 0)
            serial_devices[0] = "stdio";
        if (parallel_device_index == 0)
@@ -5314,19 +5330,19 @@ int main(int argc, char **argv, char **envp)
 
 #ifndef _WIN32
     if (daemonize) {
-	pid_t pid;
+        pid_t pid;
 
-	if (pipe(fds) == -1)
-	    exit(1);
+        if (pipe(fds) == -1)
+            exit(1);
 
-	pid = fork();
-	if (pid > 0) {
-	    uint8_t status;
-	    ssize_t len;
+        pid = fork();
+        if (pid > 0) {
+            uint8_t status;
+            ssize_t len;
 
-	    close(fds[1]);
+            close(fds[1]);
 
-	again:
+    again:
             len = read(fds[0], &status, 1);
             if (len == -1 && (errno == EINTR))
                 goto again;
@@ -5338,18 +5354,18 @@ int main(int argc, char **argv, char **envp)
                 exit(1);
             } else
                 exit(0);
-	} else if (pid < 0)
+        } else if (pid < 0)
+                exit(1);
+
+        setsid();
+
+        pid = fork();
+        if (pid > 0)
+            exit(0);
+        else if (pid < 0)
             exit(1);
 
-	setsid();
-
-	pid = fork();
-	if (pid > 0)
-	    exit(0);
-	else if (pid < 0)
-	    exit(1);
-
-	umask(027);
+        umask(027);
 
         signal(SIGTSTP, SIG_IGN);
         signal(SIGTTOU, SIG_IGN);
@@ -5419,7 +5435,7 @@ int main(int argc, char **argv, char **envp)
 #endif
     }
 
-    for(i = 0;i < nb_net_clients; i++) {
+    for (i = 0;i < nb_net_clients; i++) {
         if (net_client_parse(net_clients[i]) < 0)
             exit(1);
     }
@@ -5728,21 +5744,21 @@ int main(int argc, char **argv, char **envp)
         vm_start();
 
     if (daemonize) {
-	uint8_t status = 0;
-	ssize_t len;
+        uint8_t status = 0;
+        ssize_t len;
 
-    again1:
-	len = write(fds[1], &status, 1);
-	if (len == -1 && (errno == EINTR))
-	    goto again1;
+        again1:
+        len = write(fds[1], &status, 1);
+        if (len == -1 && (errno == EINTR))
+            goto again1;
 
-	if (len != 1)
-	    exit(1);
+        if (len != 1)
+            exit(1);
 
-	chdir("/");
-	TFR(fd = open("/dev/null", O_RDWR));
-	if (fd == -1)
-	    exit(1);
+        chdir("/");
+        TFR(fd = open("/dev/null", O_RDWR));
+        if (fd == -1)
+            exit(1);
     }
 
 #ifndef _WIN32

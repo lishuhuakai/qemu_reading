@@ -78,6 +78,9 @@ void cpu_gen_init(void)
    '*gen_code_size_ptr' contains the size of the generated code (host
    code).
 */
+/* 如果第一条指令无效,那么返回非0
+ * @param env cpu实例的指针
+ */
 int cpu_gen_code(CPUState *env, TranslationBlock *tb, int *gen_code_size_ptr)
 {
     TCGContext *s = &tcg_ctx;
@@ -138,6 +141,7 @@ int cpu_gen_code(CPUState *env, TranslationBlock *tb, int *gen_code_size_ptr)
 }
 
 /* The cpu state corresponding to 'searched_pc' is restored.
+ * searched_pc对应的cpu状态还原
  */
 int cpu_restore_state(TranslationBlock *tb,
                       CPUState *env, unsigned long searched_pc,

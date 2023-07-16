@@ -143,11 +143,12 @@ typedef struct PageDesc {
 #endif
 } PageDesc;
 
+/* 页描述符 */
 typedef struct PhysPageDesc {
     /* offset in host memory of the page + io_index in the low bits */
-    ram_addr_t phys_offset;
-    ram_addr_t region_offset;
-} PhysPageDesc;
+    ram_addr_t phys_offset; /* 物理页内的偏移 */
+    ram_addr_t region_offset; /* 内存页所在内存块中的偏移量 */
+} PhysPageDesc; 
 
 #define L2_BITS 10
 #if defined(CONFIG_USER_ONLY) && defined(TARGET_VIRT_ADDR_SPACE_BITS)
@@ -337,6 +338,10 @@ static inline PageDesc *page_find(target_ulong index)
     return p + (index & (L2_SIZE - 1));
 }
 
+/* 分配一个页描述符
+ * @param index 页的索引号
+ * @param alloc 如果alloc为true并且没有找到页描述符的话,就分配一个页描述符
+ */
 static PhysPageDesc *phys_page_find_alloc(target_phys_addr_t index, int alloc)
 {
     void **lp, **p;
@@ -348,6 +353,7 @@ static PhysPageDesc *phys_page_find_alloc(target_phys_addr_t index, int alloc)
 #if TARGET_PHYS_ADDR_SPACE_BITS > (32 + L1_BITS)
 #error unsupported TARGET_PHYS_ADDR_SPACE_BITS
 #endif
+    /* L1_BITS为10, L2_BITS为10 */
     lp = p + ((index >> (L1_BITS + L2_BITS)) & (L1_SIZE - 1));
     p = *lp;
     if (!p) {
@@ -376,6 +382,7 @@ static PhysPageDesc *phys_page_find_alloc(target_phys_addr_t index, int alloc)
     return ((PhysPageDesc *)pd) + (index & (L2_SIZE - 1));
 }
 
+/* 查找页描述符 */
 static inline PhysPageDesc *phys_page_find(target_phys_addr_t index)
 {
     return phys_page_find_alloc(index, 0);
@@ -2263,6 +2270,12 @@ static void *subpage_init (target_phys_addr_t base, ram_addr_t *phys,
    start_region and regon_offset are rounded down to a page boundary
    before calculating this offset.  This should not be a problem unless
    the low bits of start_addr and region_offset differ.  */
+/* 注册物理内存,内存大小必须是目标页大小的整数倍,如果(phys_offset & ~TARGET_PAGE_MASK) != 0
+ * 则它是io内存页,调用IO函数使用的地址为距离区域开头(the start of the region)的偏移量加上
+ * region offset.
+ * @param phys_offset 物理页的偏移量(通过phys_ram_base + pyhs_offset可以定位到内存块)
+ * @param region_offset 内存页所属的内存块中的偏移量,4k的整数倍
+ */
 void cpu_register_physical_memory_offset(target_phys_addr_t start_addr,
                                          ram_addr_t size,
                                          ram_addr_t phys_offset,
@@ -2289,10 +2302,10 @@ void cpu_register_physical_memory_offset(target_phys_addr_t start_addr,
     }
     region_offset &= TARGET_PAGE_MASK;
     size = (size + TARGET_PAGE_SIZE - 1) & TARGET_PAGE_MASK;
-    end_addr = start_addr + (target_phys_addr_t)size;
-    for(addr = start_addr; addr != end_addr; addr += TARGET_PAGE_SIZE) {
+    end_addr = start_addr + (target_phys_addr_t)size; /* 结束地址 */
+    for(addr = start_addr; addr != end_addr; addr += TARGET_PAGE_SIZE) { /* 遍历每一页内存 */
         p = phys_page_find(addr >> TARGET_PAGE_BITS);
-        if (p && p->phys_offset != IO_MEM_UNASSIGNED) {
+        if (p && p->phys_offset != IO_MEM_UNASSIGNED) { /* 非IO页 */
             ram_addr_t orig_memory = p->phys_offset;
             target_phys_addr_t start_addr2, end_addr2;
             int need_subpage = 0;
@@ -2317,7 +2330,7 @@ void cpu_register_physical_memory_offset(target_phys_addr_t start_addr,
                     (phys_offset & IO_MEM_ROMD))
                     phys_offset += TARGET_PAGE_SIZE;
             }
-        } else {
+        } else { /* 没有找到页描述符 */
             p = phys_page_find_alloc(addr >> TARGET_PAGE_BITS, 1);
             p->phys_offset = phys_offset;
             p->region_offset = region_offset;
@@ -2353,6 +2366,7 @@ void cpu_register_physical_memory_offset(target_phys_addr_t start_addr,
 }
 
 /* XXX: temporary until new memory mapping API */
+/* 获得物理页描述符 */
 ram_addr_t cpu_get_physical_page_desc(target_phys_addr_t addr)
 {
     PhysPageDesc *p;

@@ -207,7 +207,7 @@ static void cpu_handle_debug_exception(CPUState *env)
 }
 
 /* main execution loop */
-
+/* 代码执行 */
 int cpu_exec(CPUState *env1)
 {
 #define DECLARE_HOST_REGS 1
@@ -658,7 +658,8 @@ int cpu_exec(CPUState *env1)
 
 #if defined(TARGET_I386)
     /* restore flags in standard format */
-    env->eflags = env->eflags | helper_cc_compute_all(CC_OP) | (DF & DF_MASK);
+    /* 将flags还原到标准的格式 */
+    env->eflags = env->eflags | helper_cc_compute_all(CC_OP) | (DF & DF_MASK); /* 这里保证,每次执行完翻译块之后,env->flags是正确的 */
 #elif defined(TARGET_ARM)
     /* XXX: Save/restore host fpu exception state?.  */
 #elif defined(TARGET_SPARC)
