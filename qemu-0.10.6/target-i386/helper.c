@@ -963,12 +963,12 @@ int cpu_x86_handle_mmu_fault(CPUX86State *env, target_ulong addr,
 #endif
     is_write = is_write1 & 1;
 
-    if (!(env->cr[0] & CR0_PG_MASK)) {
+    if (!(env->cr[0] & CR0_PG_MASK)) { /* 没有开启分页,那么物理地址其实就是线性地址 */
         pte = addr;
-        virt_addr = addr & TARGET_PAGE_MASK;
+        virt_addr = addr & TARGET_PAGE_MASK; /* 取高8位 */
         prot = PAGE_READ | PAGE_WRITE | PAGE_EXEC;
         page_size = 4096;
-        goto do_mapping;
+        goto do_mapping; /* 实现映射 */
     }
 
     if (env->cr[4] & CR4_PAE_MASK) {
@@ -1036,7 +1036,7 @@ int cpu_x86_handle_mmu_fault(CPUX86State *env, target_ulong addr,
 
         pde_addr = ((pdpe & PHYS_ADDR_MASK) + (((addr >> 21) & 0x1ff) << 3)) &
             env->a20_mask;
-        pde = ldq_phys(pde_addr);
+        pde = ldq_phys(pde_addr); /* 取出页目录表项 */
         if (!(pde & PG_PRESENT_MASK)) {
             error_code = 0;
             goto do_fault;
@@ -1046,7 +1046,7 @@ int cpu_x86_handle_mmu_fault(CPUX86State *env, target_ulong addr,
             goto do_fault;
         }
         ptep &= pde ^ PG_NX_MASK;
-        if (pde & PG_PSE_MASK) {
+        if (pde & PG_PSE_MASK) { /* 如果设置了PSE位,那么我们使用4MB的页 */
             /* 2 MB page */
             page_size = 2048 * 1024;
             ptep ^= PG_NX_MASK;
@@ -1078,9 +1078,14 @@ int cpu_x86_handle_mmu_fault(CPUX86State *env, target_ulong addr,
                 pde |= PG_ACCESSED_MASK;
                 stl_phys_notdirty(pde_addr, pde);
             }
+           /* 页表
+            * (pde & ~0xfff) 用于取高20bit,为页表基址
+            *  (addr >> 10) & 0xffc 页表项在页表内的偏移
+            * 两者相加,为addr对应的页表项的物理地址(需要加上偏移)
+            */
             pte_addr = ((pde & PHYS_ADDR_MASK) + (((addr >> 12) & 0x1ff) << 3)) &
                 env->a20_mask;
-            pte = ldq_phys(pte_addr);
+            pte = ldq_phys(pte_addr); /* 取出页表项,页表项4字节 */
             if (!(pte & PG_PRESENT_MASK)) {
                 error_code = 0;
                 goto do_fault;
@@ -1111,7 +1116,8 @@ int cpu_x86_handle_mmu_fault(CPUX86State *env, target_ulong addr,
                     pte |= PG_DIRTY_MASK;
                 stl_phys_notdirty(pte_addr, pte);
             }
-            page_size = 4096;
+            page_size = 4096; /* page大小为4096,也就是4k */
+            /* 取addr的高20位,其他位全部为0,这里的virt_addr实际指的是addr所在page的首地址 */
             virt_addr = addr & ~0xfff;
             pte = pte & (PHYS_ADDR_MASK | 0xfff);
         }
@@ -1203,14 +1209,22 @@ int cpu_x86_handle_mmu_fault(CPUX86State *env, target_ulong addr,
                 prot |= PAGE_WRITE;
         }
     }
- do_mapping:
+ do_mapping: /* 做映射 */
     pte = pte & env->a20_mask;
-
+    /* addr & ~0xfff 用于取线性地址的高20bit, 按照道理来说,页内偏移应该是12位
+     * 页内偏移不是(addr & 0xfff) & (page_size - 1)吗?
+     * 没有错,addr对应的页内偏移确实是(addr & 0xfff) & (page_size - 1).
+     * 如果没有开启分页,那么vaddr等于paddr
+     * page_size为4096的情况下,page_offset为0,这里说明一下,这里的映射是以page为单位的,线性地址addr
+     * 并不总是和page的大小对齐,对于这样的addr,这里的tlb实际记录的是addr所在page首地址(线性地址)和
+     * 物理page的物理首地址映射.
+     * 如果page_size为4M, 那么page_offset不为0.
+     */
     /* Even if 4MB pages, we map only one 4KB page in the cache to
        avoid filling it too fast */
-    page_offset = (addr & TARGET_PAGE_MASK) & (page_size - 1);
-    paddr = (pte & TARGET_PAGE_MASK) + page_offset;
-    vaddr = virt_addr + page_offset;
+    page_offset = (addr & TARGET_PAGE_MASK) & (page_size - 1); /* 页内偏移 */
+    paddr = (pte & TARGET_PAGE_MASK) + page_offset; /* 计算物理page页的首地址(物理地址) */
+    vaddr = virt_addr + page_offset; /* 计算addr所在page的首地址(线性地址) */
 
     ret = tlb_set_page_exec(env, vaddr, paddr, prot, mmu_idx, is_softmmu);
     return ret;

@@ -83,6 +83,10 @@ static inline DATA_TYPE glue(io_read, SUFFIX)(target_phys_addr_t physaddr,
 }
 
 /* handle all cases except unaligned access which span two pages */
+/* 数据加载,处理所有的情况,除了横跨两页的不对齐访问 
+ * @param addr 地址
+ * @param mmu_idx
+ */
 DATA_TYPE REGPARM glue(glue(__ld, SUFFIX), MMUSUFFIX)(target_ulong addr,
                                                       int mmu_idx)
 {
@@ -104,7 +108,7 @@ DATA_TYPE REGPARM glue(glue(__ld, SUFFIX), MMUSUFFIX)(target_ulong addr,
                 goto do_unaligned_access;
             retaddr = GETPC();
             addend = env->iotlb[mmu_idx][index];
-            res = glue(io_read, SUFFIX)(addend, addr, retaddr);
+            res = glue(io_read, SUFFIX)(addend, addr, retaddr); /* io访问 */
         } else if (((addr & ~TARGET_PAGE_MASK) + DATA_SIZE - 1) >= TARGET_PAGE_SIZE) {
             /* slow unaligned access (it spans two pages or IO) */
         do_unaligned_access:

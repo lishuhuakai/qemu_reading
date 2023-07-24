@@ -25,8 +25,8 @@
 #include "irq.h"
 
 struct IRQState {
-    qemu_irq_handler handler;
-    void *opaque;
+    qemu_irq_handler handler; /* 中断处理函数 */
+    void *opaque; /* 传递给中断处理函数的参数 */
     int n;
 };
 
@@ -38,6 +38,11 @@ void qemu_set_irq(qemu_irq irq, int level)
     irq->handler(irq->opaque, irq->n, level);
 }
 
+/* 分配一个qemu_irq
+ * @param handler 中断处理回调函数
+ * @param opaque 传递给回调函数的参数
+ * @param n 需要注册的中断个数
+ */
 qemu_irq *qemu_allocate_irqs(qemu_irq_handler handler, void *opaque, int n)
 {
     qemu_irq *s;
@@ -49,7 +54,7 @@ qemu_irq *qemu_allocate_irqs(qemu_irq_handler handler, void *opaque, int n)
     for (i = 0; i < n; i++) {
         p->handler = handler;
         p->opaque = opaque;
-        p->n = i;
+        p->n = i; /* 中断编号? */
         s[i] = p;
         p++;
     }

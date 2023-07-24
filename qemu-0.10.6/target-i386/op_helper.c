@@ -4758,6 +4758,10 @@ static float approx_rcp(float a)
 /* try to fill the TLB and return an exception if error. If retaddr is
    NULL, it means that the function was called in C code (i.e. not
    from generated code or from helper.c) */
+/* 尝试填充TLB,如果发生错误,返回一个exception
+ * @param addr 地址
+ * @param is_write 是否可写
+ */
 /* XXX: fix it to restore all registers */
 void tlb_fill(target_ulong addr, int is_write, int mmu_idx, void *retaddr)
 {
@@ -4770,7 +4774,7 @@ void tlb_fill(target_ulong addr, int is_write, int mmu_idx, void *retaddr)
        generated code */
     saved_env = env;
     env = cpu_single_env;
-
+    /* 处理缺页中断 */
     ret = cpu_x86_handle_mmu_fault(env, addr, is_write, mmu_idx, 1);
     if (ret) {
         if (retaddr) {

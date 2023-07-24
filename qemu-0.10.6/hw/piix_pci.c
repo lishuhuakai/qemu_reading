@@ -169,6 +169,7 @@ static int i440fx_load(QEMUFile* f, void *opaque, int version_id)
     return 0;
 }
 
+/* 初始化i440fx主板芯片组 */
 PCIBus *i440fx_init(PCIDevice **pi440fx_state, qemu_irq *pic)
 {
     PCIBus *b;
@@ -213,6 +214,10 @@ PCIDevice *piix4_dev;
 /* just used for simpler irq handling. */
 #define PCI_IRQ_WORDS   ((PCI_DEVICES_MAX + 31) / 32)
 
+/* 触发中断
+ * @param level 取值只有0或者1
+ * @param irq_num 设备中断号
+ */
 static void piix3_set_irq(qemu_irq *pic, int irq_num, int level)
 {
     int i, pic_irq, pic_level;
@@ -221,6 +226,7 @@ static void piix3_set_irq(qemu_irq *pic, int irq_num, int level)
 
     /* now we change the pic irq level according to the piix irq mappings */
     /* XXX: optimize */
+    /* 一个中断号可以对应多个pci设备 */
     pic_irq = piix3_dev->config[0x60 + irq_num];
     if (pic_irq < 16) {
         /* The pic level is the logical OR of all the PCI irqs mapped
@@ -326,7 +332,7 @@ int piix3_init(PCIBus *bus, int devfn)
 {
     PCIDevice *d;
     uint8_t *pci_conf;
-
+    /* 将PIIX3挂载到pci接口上 */
     d = pci_register_device(bus, "PIIX3", sizeof(PCIDevice),
                                     devfn, NULL, NULL);
     register_savevm("PIIX3", 0, 2, piix_save, piix_load, d);

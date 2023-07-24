@@ -9,6 +9,9 @@ typedef void SetIRQFunc(void *opaque, int irq_num, int level);
 
 void qemu_set_irq(qemu_irq irq, int level);
 
+/* 触发中断
+ * @param irq
+ */
 static inline void qemu_irq_raise(qemu_irq irq)
 {
     qemu_set_irq(irq, 1);

@@ -35,13 +35,24 @@
 #define APIC_LVT_NB      6
 
 /* APIC delivery modes */
+/*000b,发送给Destination Field列出的所有cpu. level,edge均可. */
 #define APIC_DM_FIXED	0
+/* 001b,发送给Destination Field列出的所有cpu中,优先级最低的cpu.level,edge均可.*/
 #define APIC_DM_LOWPRI	1
+/* 010b,System Management Interrupt,系统管理中断,只能为edge触发,并且vector字段写0 */
 #define APIC_DM_SMI	2
+/* 100b,None Mask Interrupt,不可屏蔽中断,发送给Destination Field列出的所有CPU,vector字段值
+ * 被忽略,NMI是edge触发,Trigger Mode字段中的值对NMI无影响,但建议设置成edge
+ */
 #define APIC_DM_NMI	4
+/* 101b,发送给Destination Field列出的所有cpu,LAPIC收到后执行INIT中断.
+ */
 #define APIC_DM_INIT	5
 #define APIC_DM_SIPI	6
-#define APIC_DM_EXTINT	7
+/* 111b,发送给Destination Field列出的所有cpu,cpu收到该中断之后,认为这是一个PIC发送的中断请求,并回应
+ * INTA信号
+ */
+#define APIC_DM_EXTINT	7 
 
 /* APIC destination mode */
 #define APIC_DESTMODE_FLAT	0xf
@@ -71,6 +82,9 @@ typedef struct APICState {
     uint32_t apicbase;
     uint8_t id;
     uint8_t arb_id;
+    /* task priority register 任务优先级寄存器,确定当前CPU能处理什么级别的中断 
+     * cpu只处理比TPR中级别更高的中断,比它低的中断暂时屏蔽掉,也就是在IRR中继续等待.
+     */
     uint8_t tpr;
     uint32_t spurious_vec;
     uint8_t log_dest;
@@ -80,6 +94,9 @@ typedef struct APICState {
     uint32_t irr[8]; /* interrupt request register */
     uint32_t lvt[APIC_LVT_NB];
     uint32_t esr; /* error register */
+    /* Interrupt command Register 中断指令寄存器,当一个cpu想把中断发送给另外一个cpu时,
+     * 就在ICR中填写相应的中断向量和目标LAPIC标识,然后通过总线向目标LAPIC发送消息.
+     */
     uint32_t icr[2];
 
     uint32_t divide_conf;
@@ -89,12 +106,15 @@ typedef struct APICState {
     QEMUTimer *timer;
 } APICState;
 
+/* IOAPIC -- 主要负责接收外部的硬件中断,将硬件产生的中断信号翻译成具有一定格式的消息,然后通过总线
+ * 将消息发送给一个或者多个LAPIC
+ */
 struct IOAPICState {
     uint8_t id;
     uint8_t ioregsel;
 
-    uint32_t irr;
-    uint64_t ioredtbl[IOAPIC_NUM_PINS];
+    uint32_t irr; /* interrupt request register */
+    uint64_t ioredtbl[IOAPIC_NUM_PINS]; /* 一共24个管脚,每个管脚都对应着一个64位的重定向表项 */
 };
 
 static int apic_io_memory;
@@ -108,6 +128,7 @@ static void apic_set_irq(APICState *s, int vector_num, int trigger_mode);
 static void apic_update_irq(APICState *s);
 
 /* Find first bit starting from msb */
+/* 找到第1个为1的bit的位置 */
 static int fls_bit(uint32_t value)
 {
     return 31 - clz32(value);
@@ -136,11 +157,13 @@ static inline void reset_bit(uint32_t *tab, int index)
 }
 
 static inline int get_bit(uint32_t *tab, int index)
-{
+{   /* index分作两部分,高27bit的值作为tab数组的索引,用于找到tab项
+     * 低5bit的值用于构建掩码,取得对应的值
+     */
     int i, mask;
     i = index >> 5;
-    mask = 1 << (index & 0x1f);
-    return !!(tab[i] & mask);
+    mask = 1 << (index & 0x1f); /*  构建掩码 */
+    return !!(tab[i] & mask); /* 获得对应的值 */
 }
 
 static void apic_local_deliver(CPUState *env, int vector)
@@ -213,6 +236,13 @@ void apic_deliver_pic_intr(CPUState *env, int level)
     }\
 }
 
+/* 将中断传递给对应的cpu
+ * @param deliver_bitmask 每个cpu对应一个bit
+ * @param delivery_mode 发送模式
+ * @param vector_num 中断向量
+ * @param polarity 0高电平 1低电平
+ * @param trigger_mode 0边缘触发 1水平触发
+ */
 static void apic_bus_deliver(const uint32_t *deliver_bitmask,
                              uint8_t delivery_mode,
                              uint8_t vector_num, uint8_t polarity,
@@ -233,8 +263,8 @@ static void apic_bus_deliver(const uint32_t *deliver_bitmask,
                     }
                 }
                 if (d >= 0) {
-                    apic_iter = local_apics[d];
-                    if (apic_iter) {
+                    apic_iter = local_apics[d]; /* 找到对应的apic */
+                    if (apic_iter) { /* 传递中断 */
                         apic_set_irq(apic_iter, vector_num, trigger_mode);
                     }
                 }
@@ -311,6 +341,7 @@ uint8_t cpu_get_apic_tpr(CPUX86State *env)
 }
 
 /* return -1 if no bit is set */
+/* 获得优先级最高的中断 */
 static int get_highest_priority_int(uint32_t *tab)
 {
     int i;
@@ -326,7 +357,7 @@ static int apic_get_ppr(APICState *s)
 {
     int tpr, isrv, ppr;
 
-    tpr = (s->tpr >> 4);
+    tpr = (s->tpr >> 4); /* 为什么要右移4位 */
     isrv = get_highest_priority_int(s->isr);
     if (isrv < 0)
         isrv = 0;
@@ -345,17 +376,24 @@ static int apic_get_arb_pri(APICState *s)
 }
 
 /* signal the CPU if an irq is pending */
+/* 如果一个中断(irq)还未处理,那么提醒cpu */
 static void apic_update_irq(APICState *s)
 {
     int irrv, ppr;
+    /* SVR 如果不启用apic,就直接退出 */
     if (!(s->spurious_vec & APIC_SV_ENABLE))
         return;
+    /* 在irr寄存器中,查找一个优先级最高的中断 */
     irrv = get_highest_priority_int(s->irr);
     if (irrv < 0)
         return;
+    /* Processor Priority Register -- 处理器优先级寄存器,表示当前正处理的中断的优先级
+     * 以此来决定IRR中的中断是否要发送给CPU
+     */
     ppr = apic_get_ppr(s);
     if (ppr && (irrv & 0xf0) <= (ppr & 0xf0))
         return;
+    /* 触发cpu中断 */
     cpu_interrupt(s->cpu_env, CPU_INTERRUPT_HARD);
 }
 
@@ -369,10 +407,14 @@ int apic_get_irq_delivered(void)
     return apic_irq_delivered;
 }
 
+/* 设置/触发 中断
+ * @param vector_num 中断号
+ * @param trigger_mode 触发模式, 0-边缘触发, 1-水平触发
+ */
 static void apic_set_irq(APICState *s, int vector_num, int trigger_mode)
 {
     apic_irq_delivered += !get_bit(s->irr, vector_num);
-
+    /* 第vector_num号中断等待处理 */
     set_bit(s->irr, vector_num);
     if (trigger_mode)
         set_bit(s->tmr, vector_num);
@@ -381,33 +423,40 @@ static void apic_set_irq(APICState *s, int vector_num, int trigger_mode)
     apic_update_irq(s);
 }
 
+/* 完成中断 */
 static void apic_eoi(APICState *s)
 {
     int isrv;
+    /* 在isr寄存器中,查找正在处理的中断 */
     isrv = get_highest_priority_int(s->isr);
     if (isrv < 0)
         return;
-    reset_bit(s->isr, isrv);
+    reset_bit(s->isr, isrv); /* isrv号中断已经处理完毕 */
     /* XXX: send the EOI packet to the APIC bus to allow the I/O APIC to
             set the remote IRR bit for level triggered interrupts. */
     apic_update_irq(s);
 }
 
+/*
+ * @param dest 目的
+ * @param dest_mode 目的地模式
+ */
 static void apic_get_delivery_bitmask(uint32_t *deliver_bitmask,
                                       uint8_t dest, uint8_t dest_mode)
 {
     APICState *apic_iter;
     int i;
 
-    if (dest_mode == 0) {
-        if (dest == 0xff) {
+    if (dest_mode == 0) { /* physical mode */
+        if (dest == 0xff) { /* 发送给所有cpu */
             memset(deliver_bitmask, 0xff, MAX_APIC_WORDS * sizeof(uint32_t));
-        } else {
+        } else { /* 仅仅发送给1个cpu */
             memset(deliver_bitmask, 0x00, MAX_APIC_WORDS * sizeof(uint32_t));
             set_bit(deliver_bitmask, dest);
         }
-    } else {
+    } else { /* logic mode */
         /* XXX: cluster mode */
+        /* 发送给一组cpu */
         memset(deliver_bitmask, 0x00, MAX_APIC_WORDS * sizeof(uint32_t));
         for(i = 0; i < MAX_APICS; i++) {
             apic_iter = local_apics[i];
@@ -454,7 +503,9 @@ static void apic_init_ipi(APICState *s)
         s->cpu_env->halted = 1;
 }
 
-/* send a SIPI message to the CPU to start it */
+/* send a SIPI message to the CPU to start it
+ * 发送一个SIPI消息给CPU
+ */
 static void apic_startup(APICState *s, int vector_num)
 {
     CPUState *env = s->cpu_env;
@@ -514,30 +565,32 @@ static void apic_deliver(APICState *s, uint8_t dest, uint8_t dest_mode,
                      trigger_mode);
 }
 
+/* 获得中断 */
 int apic_get_interrupt(CPUState *env)
 {
     APICState *s = env->apic_state;
     int intno;
 
-    /* if the APIC is installed or enabled, we let the 8259 handle the
-       IRQs */
+    /* if the APIC is installed or enabled, we let the 8259 handle the IRQs */
     if (!s)
         return -1;
     if (!(s->spurious_vec & APIC_SV_ENABLE))
         return -1;
 
     /* XXX: spurious IRQ handling */
+    /* 获得等待处理的优先级最高的中断 */
     intno = get_highest_priority_int(s->irr);
     if (intno < 0)
         return -1;
     if (s->tpr && intno <= s->tpr)
         return s->spurious_vec & 0xff;
     reset_bit(s->irr, intno);
-    set_bit(s->isr, intno);
+    set_bit(s->isr, intno); /* 将中断转移到isr,表示cpu正在处理这个中断 */
     apic_update_irq(s);
     return intno;
 }
 
+/* 触发中断? */
 int apic_accept_pic_intr(CPUState *env)
 {
     APICState *s = env->apic_state;
@@ -705,6 +758,7 @@ static uint32_t apic_mem_readl(void *opaque, target_phys_addr_t addr)
     return val;
 }
 
+/* 操作寄存器 */
 static void apic_mem_writel(void *opaque, target_phys_addr_t addr, uint32_t val)
 {
     CPUState *env;
@@ -891,6 +945,7 @@ static CPUWriteMemoryFunc *apic_mem_write[3] = {
     apic_mem_writel,
 };
 
+/* apic初始化 */
 int apic_init(CPUState *env)
 {
     APICState *s;
@@ -936,22 +991,26 @@ static void ioapic_service(IOAPICState *s)
     uint8_t polarity;
     uint32_t deliver_bitmask[MAX_APIC_WORDS];
 
-    for (i = 0; i < IOAPIC_NUM_PINS; i++) {
+    for (i = 0; i < IOAPIC_NUM_PINS; i++) { /* 遍历每一个管脚 */
         mask = 1 << i;
-        if (s->irr & mask) {
+        if (s->irr & mask) { /* 管脚启用? */
             entry = s->ioredtbl[i];
-            if (!(entry & APIC_LVT_MASKED)) {
-                trig_mode = ((entry >> 15) & 1);
-                dest = entry >> 56;
-                dest_mode = (entry >> 11) & 1;
-                delivery_mode = (entry >> 8) & 7;
+            if (!(entry & APIC_LVT_MASKED)) { /* 中断没有被屏蔽 */
+                trig_mode = ((entry >> 15) & 1); /* 触发模式 -- 电平/边缘 */
+                dest = entry >> 56; /* 目的字段 */
+                /* Destination Mode -- 0 physical Mode 
+                 * -- 1 logic mode
+                 */
+                dest_mode = (entry >> 11) & 1; /* 发送模式 */
+                delivery_mode = (entry >> 8) & 7; /* 传送模式 */
+                 /* Interrupt Input Pin Polarity,中断管脚的极性,指定该管脚的有效电平是高电平还是低电平 */
                 polarity = (entry >> 13) & 1;
                 if (trig_mode == APIC_TRIGGER_EDGE)
                     s->irr &= ~mask;
                 if (delivery_mode == APIC_DM_EXTINT)
                     vector = pic_read_irq(isa_pic);
                 else
-                    vector = entry & 0xff;
+                    vector = entry & 0xff; /* 中断向量 */
 
                 apic_get_delivery_bitmask(deliver_bitmask, dest, dest_mode);
                 apic_bus_deliver(deliver_bitmask, delivery_mode,
@@ -961,6 +1020,10 @@ static void ioapic_service(IOAPICState *s)
     }
 }
 
+/* 中断触发
+ * @param vector 中断向量(中断号)
+ * @param level 
+ */
 void ioapic_set_irq(void *opaque, int vector, int level)
 {
     IOAPICState *s = opaque;
@@ -968,13 +1031,12 @@ void ioapic_set_irq(void *opaque, int vector, int level)
     /* ISA IRQs map to GSI 1-1 except for IRQ0 which maps
      * to GSI 2.  GSI maps to ioapic 1-1.  This is not
      * the cleanest way of doing it but it should work. */
-
     if (vector == 0)
         vector = 2;
 
     if (vector >= 0 && vector < IOAPIC_NUM_PINS) {
         uint32_t mask = 1 << vector;
-        uint64_t entry = s->ioredtbl[vector];
+        uint64_t entry = s->ioredtbl[vector]; /* 获得对应引脚 */
 
         if ((entry >> 15) & 1) {
             /* level triggered */
@@ -987,13 +1049,16 @@ void ioapic_set_irq(void *opaque, int vector, int level)
         } else {
             /* edge triggered */
             if (level) {
-                s->irr |= mask;
+                s->irr |= mask; /* 记录下发生的中断 */
                 ioapic_service(s);
             }
         }
     }
 }
 
+/* 读取ioapic的相关寄存器
+ * @param addr 物理地址
+ */
 static uint32_t ioapic_mem_readl(void *opaque, target_phys_addr_t addr)
 {
     IOAPICState *s = opaque;
@@ -1050,15 +1115,16 @@ static void ioapic_mem_writel(void *opaque, target_phys_addr_t addr, uint32_t va
             case 0x01:
             case 0x02:
                 return;
-            default:
-                index = (s->ioregsel - 0x10) >> 1;
+            default: /* 因为0x00~0x02已经被使用,  0x1<<1 - 0x1<<1 ~ 0x18<<1 - 0x1<<1 用于选择管脚 */
+                /* ioregsel的取值范围大致为 0x10 ~ 0x180 */
+                index = (s->ioregsel - 0x10) >> 1; /* 选中第index个管脚? */
                 if (index >= 0 && index < IOAPIC_NUM_PINS) {
-                    if (s->ioregsel & 1) {
+                    if (s->ioregsel & 1) { /* 奇数 */
                         s->ioredtbl[index] &= 0xffffffff;
-                        s->ioredtbl[index] |= (uint64_t)val << 32;
-                    } else {
+                        s->ioredtbl[index] |= (uint64_t)val << 32; /* 设置高32bit */
+                    } else { /* 偶数 */
                         s->ioredtbl[index] &= ~0xffffffffULL;
-                        s->ioredtbl[index] |= val;
+                        s->ioredtbl[index] |= val; /* 设置低32bit */
                     }
                     ioapic_service(s);
                 }
@@ -1123,7 +1189,7 @@ IOAPICState *ioapic_init(void)
 
     s = qemu_mallocz(sizeof(IOAPICState));
     ioapic_reset(s);
-    s->id = last_apic_id++;
+    s->id = last_apic_id++; /* 分配一个id */
 
     io_memory = cpu_register_io_memory(0, ioapic_mem_read,
                                        ioapic_mem_write, s);

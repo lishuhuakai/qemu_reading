@@ -31,23 +31,31 @@
 
 //#define DEBUG_IRQ_LATENCY
 //#define DEBUG_IRQ_COUNT
-
+/* Programmable Interrupt Controller -- 可编程中断控制器 */
 typedef struct PicState {
     uint8_t last_irr; /* edge detection */
+    /* 用于存放等待进一步处理的中断 */
     uint8_t irr; /* interrupt request register */
+    /*imr用于过滤被屏蔽的中断 */
     uint8_t imr; /* interrupt mask register */
+    /* isr用于记录正在被处理的中断 */
     uint8_t isr; /* interrupt service register */
     uint8_t priority_add; /* highest irq priority */
-    uint8_t irq_base;
-    uint8_t read_reg_select;
+    uint8_t irq_base; /* 起始中断号 */
+    uint8_t read_reg_select; /* read_reg_select为1,选择ISR寄存器,否则选择IRR寄存器,这两个寄存器能够读取,前提是RR为1 */
     uint8_t poll;
     uint8_t special_mask;
-    uint8_t init_state;
-    uint8_t auto_eoi;
+    uint8_t init_state; /* 当前正在设置的ICW寄存器 */
+    uint8_t auto_eoi; /* auto end of interrupt */
     uint8_t rotate_on_auto_eoi;
     uint8_t special_fully_nested_mode;
+    /* init4表示是否需要设置ICW4 */
     uint8_t init4; /* true if 4 byte init */
     uint8_t single_mode; /* true if slave pic is not initialized */
+    /* Edge/Level Control Registers 
+     * 因为ISA bus不支持水平触发(level triggered interrupts),水平触发模式可能并不适用于
+     * 连接在ISA的设备,因此在ISA bus上,要将8295配置为边缘触发模式(edge triggered mode)
+     */
     uint8_t elcr; /* PIIX edge/trigger selection*/
     uint8_t elcr_mask;
     PicState2 *pics_state;
@@ -56,12 +64,12 @@ typedef struct PicState {
 struct PicState2 {
     /* 0 is master pic, 1 is slave pic */
     /* XXX: better separation between the two pics */
-    PicState pics[2];
+    PicState pics[2]; /* 主/从两个pic */
     qemu_irq parent_irq;
     void *irq_request_opaque;
     /* IOAPIC callback support */
-    SetIRQFunc *alt_irq_func;
-    void *alt_irq_opaque;
+    SetIRQFunc *alt_irq_func; /* IOAPIC回调函数 */
+    void *alt_irq_opaque; /* IOAPIC回调函数的参数 */
 };
 
 #if defined(DEBUG_PIC) || defined (DEBUG_IRQ_COUNT)
@@ -71,15 +79,19 @@ static int irq_level[16];
 static uint64_t irq_count[16];
 #endif
 
-/* set irq level. If an edge is detected, then the IRR is set to 1 */
+/* set irq level. If an edge is detected, then the IRR is set to 1 
+ * 设置irq电平,如果检测到edge,将IRR设置为1
+ * @param irq 中断号
+ * @param level
+ */
 static inline void pic_set_irq1(PicState *s, int irq, int level)
 {
     int mask;
-    mask = 1 << irq;
-    if (s->elcr & mask) {
+    mask = 1 << irq; /* 将中断转换为mask */
+    if (s->elcr & mask) { /* 水平触发模式 */
         /* level triggered */
         if (level) {
-            s->irr |= mask;
+            s->irr |= mask; /* 记录下发生的中断 */
             s->last_irr |= mask;
         } else {
             s->irr &= ~mask;
@@ -88,9 +100,9 @@ static inline void pic_set_irq1(PicState *s, int irq, int level)
     } else {
         /* edge triggered */
         if (level) {
-            if ((s->last_irr & mask) == 0)
-                s->irr |= mask;
-            s->last_irr |= mask;
+            if ((s->last_irr & mask) == 0) /* 如果上次没有触发 */
+                s->irr |= mask; /* 才记录下发生的中断,也就是说,并不会重复触发,必须要等中断处理完成了,才会继续触发 */
+            s->last_irr |= mask; /* 记录下发生的中断 */
         } else {
             s->last_irr &= ~mask;
         }
@@ -99,6 +111,9 @@ static inline void pic_set_irq1(PicState *s, int irq, int level)
 
 /* return the highest priority found in mask (highest = smallest
    number). Return 8 if no irq */
+/* 返回优先级最高的中断,也就是最小的中断号
+ * 如果没有中断,那么返回8
+ */
 static inline int get_priority(PicState *s, int mask)
 {
     int priority;
@@ -111,26 +126,32 @@ static inline int get_priority(PicState *s, int mask)
 }
 
 /* return the pic wanted interrupt. return -1 if none */
+/* 返回pic所需要的中断
+ *
+ */
 static int pic_get_irq(PicState *s)
 {
     int mask, cur_priority, priority;
 
-    mask = s->irr & ~s->imr;
-    priority = get_priority(s, mask);
+    mask = s->irr & ~s->imr; /* 过滤掉那些被屏蔽的中断 */
+    priority = get_priority(s, mask); /* 从当前等待处理的中断中选择一个优先级最高的中断 */
     if (priority == 8)
         return -1;
     /* compute current priority. If special fully nested mode on the
        master, the IRQ coming from the slave is not taken into account
        for the priority computation. */
-    mask = s->isr;
+    /* 计算当前的优先级,如果在master irq上启用了sepecial fully nested mode,那么来自从pic
+     * 的中断将不会参与优先级的计算.
+     */
+    mask = s->isr; /* 正在被处理的中断 */
     if (s->special_mask)
         mask &= ~s->imr;
     if (s->special_fully_nested_mode && s == &s->pics_state->pics[0])
-        mask &= ~(1 << 2);
-    cur_priority = get_priority(s, mask);
-    if (priority < cur_priority) {
+        mask &= ~(1 << 2); /* 屏蔽掉2号中断 */
+    cur_priority = get_priority(s, mask); /* 从当前正在被处理的中断中,找出一个优先级最高的 */
+    if (priority < cur_priority) { /* 待处理的中断有一个中断的优先级比正在处理的所有中断的优先级都高 */
         /* higher priority found: an irq should be generated */
-        return (priority + s->priority_add) & 7;
+        return (priority + s->priority_add) & 7; /* 返回中断号 */
     } else {
         return -1;
     }
@@ -139,18 +160,20 @@ static int pic_get_irq(PicState *s)
 /* raise irq to CPU if necessary. must be called every time the active
    irq may change */
 /* XXX: should not export it, but it is needed for an APIC kludge */
+/* 如果可能的话,将中断传递给cpu */
 void pic_update_irq(PicState2 *s)
 {
     int irq2, irq;
 
     /* first look at slave pic */
-    irq2 = pic_get_irq(&s->pics[1]);
+    irq2 = pic_get_irq(&s->pics[1]); /* 首先查看slave pic */
     if (irq2 >= 0) {
         /* if irq request by slave pic, signal master PIC */
-        pic_set_irq1(&s->pics[0], 2, 1);
+        pic_set_irq1(&s->pics[0], 2, 1); /* 注意这里,触发主设备的2号中断 */
         pic_set_irq1(&s->pics[0], 2, 0);
     }
     /* look at requested irq */
+    /* 查看master pic中已经触发的中断 */
     irq = pic_get_irq(&s->pics[0]);
     if (irq >= 0) {
 #if defined(DEBUG_PIC)
@@ -165,6 +188,7 @@ void pic_update_irq(PicState2 *s)
         }
         printf("pic: cpu_interrupt\n");
 #endif
+        /* 向上层设备报告中断 */
         qemu_irq_raise(s->parent_irq);
     }
 
@@ -180,6 +204,9 @@ void pic_update_irq(PicState2 *s)
 int64_t irq_time[16];
 #endif
 
+/* 中断触发
+ * @param irq 硬件中断号
+ */
 static void i8259_set_irq(void *opaque, int irq, int level)
 {
     PicState2 *s = opaque;
@@ -198,7 +225,7 @@ static void i8259_set_irq(void *opaque, int irq, int level)
 #endif
 #ifdef DEBUG_IRQ_LATENCY
     if (level) {
-        irq_time[irq] = qemu_get_clock(vm_clock);
+        irq_time[irq] = qemu_get_clock(vm_clock); /* 记录下中断触发时间 */
     }
 #endif
     pic_set_irq1(&s->pics[irq >> 3], irq & 7, level);
@@ -209,6 +236,9 @@ static void i8259_set_irq(void *opaque, int irq, int level)
 }
 
 /* acknowledge interrupt 'irq' */
+/* 确认中断irq
+ * @param irq 中断号
+ */
 static inline void pic_intack(PicState *s, int irq)
 {
     if (s->auto_eoi) {
@@ -219,9 +249,10 @@ static inline void pic_intack(PicState *s, int irq)
     }
     /* We don't clear a level sensitive interrupt here */
     if (!(s->elcr & (1 << irq)))
-        s->irr &= ~(1 << irq);
+        s->irr &= ~(1 << irq); /* 用于表示中断已经处理 */
 }
 
+/* 读取中断 */
 int pic_read_irq(PicState2 *s)
 {
     int irq, irq2, intno;
@@ -229,7 +260,7 @@ int pic_read_irq(PicState2 *s)
     irq = pic_get_irq(&s->pics[0]);
     if (irq >= 0) {
         pic_intack(&s->pics[0], irq);
-        if (irq == 2) {
+        if (irq == 2) { /* 中断号为2,说明是从从pic来的中断 */
             irq2 = pic_get_irq(&s->pics[1]);
             if (irq2 >= 0) {
                 pic_intack(&s->pics[1], irq2);
@@ -238,7 +269,7 @@ int pic_read_irq(PicState2 *s)
                 irq2 = 7;
             }
             intno = s->pics[1].irq_base + irq2;
-            irq = irq2 + 8;
+            irq = irq2 + 8; /* 更新中断号 */
         } else {
             intno = s->pics[0].irq_base + irq;
         }
@@ -260,6 +291,7 @@ int pic_read_irq(PicState2 *s)
     return intno;
 }
 
+/* 重置pic */
 static void pic_reset(void *opaque)
 {
     PicState *s = opaque;
@@ -282,6 +314,7 @@ static void pic_reset(void *opaque)
     /* Note: ELCR is not reset */
 }
 
+/* 设置pic */
 static void pic_ioport_write(void *opaque, uint32_t addr, uint32_t val)
 {
     PicState *s = opaque;
@@ -374,14 +407,15 @@ static void pic_ioport_write(void *opaque, uint32_t addr, uint32_t val)
     }
 }
 
+/* 读取中断 */
 static uint32_t pic_poll_read (PicState *s, uint32_t addr1)
 {
     int ret;
 
-    ret = pic_get_irq(s);
+    ret = pic_get_irq(s); /* 获得一个发生的中断 */
     if (ret >= 0) {
         if (addr1 >> 7) {
-            s->pics_state->pics[0].isr &= ~(1 << 2);
+            s->pics_state->pics[0].isr &= ~(1 << 2); /* 消除从pic的中断 */
             s->pics_state->pics[0].irr &= ~(1 << 2);
         }
         s->irr &= ~(1 << ret);
@@ -431,7 +465,7 @@ uint32_t pic_intack_read(PicState2 *s)
 
     ret = pic_poll_read(&s->pics[0], 0x00);
     if (ret == 2)
-        ret = pic_poll_read(&s->pics[1], 0x80) + 8;
+        ret = pic_poll_read(&s->pics[1], 0x80) + 8; /* 从从pic读取中断 */
     /* Prepare for ISR read */
     s->pics[0].read_reg_select = 1;
 
@@ -444,6 +478,7 @@ static void elcr_ioport_write(void *opaque, uint32_t addr, uint32_t val)
     s->elcr = val & s->elcr_mask;
 }
 
+/* 读取elcr寄存器的值 */
 static uint32_t elcr_ioport_read(void *opaque, uint32_t addr1)
 {
     PicState *s = opaque;
@@ -499,6 +534,10 @@ static int pic_load(QEMUFile *f, void *opaque, int version_id)
 }
 
 /* XXX: add generic master/slave system */
+/* 初始化pic
+ * @param io_addr io地址
+ * @param elcr_addr
+ */
 static void pic_init1(int io_addr, int elcr_addr, PicState *s)
 {
     register_ioport_write(io_addr, 2, 1, pic_ioport_write, s);
@@ -511,6 +550,7 @@ static void pic_init1(int io_addr, int elcr_addr, PicState *s)
     qemu_register_reset(pic_reset, s);
 }
 
+/* 打印pic的相关信息 */
 void pic_info(void)
 {
     int i;
@@ -519,7 +559,7 @@ void pic_info(void)
     if (!isa_pic)
         return;
 
-    for(i=0;i<2;i++) {
+    for (i = 0; i < 2; i++) {
         s = &isa_pic->pics[i];
         term_printf("pic%d: irr=%02x imr=%02x isr=%02x hprio=%d irq_base=%02x rr_sel=%d elcr=%02x fnm=%d\n",
                     i, s->irr, s->imr, s->isr, s->priority_add,
@@ -545,6 +585,7 @@ void irq_info(void)
 #endif
 }
 
+/* 初始化8259 pic */
 qemu_irq *i8259_init(qemu_irq parent_irq)
 {
     PicState2 *s;
@@ -558,9 +599,10 @@ qemu_irq *i8259_init(qemu_irq parent_irq)
     s->pics[0].pics_state = s;
     s->pics[1].pics_state = s;
     isa_pic = s;
-    return qemu_allocate_irqs(i8259_set_irq, s, 16);
+    return qemu_allocate_irqs(i8259_set_irq, s, 16); /* 中断分配 */
 }
 
+/* 注册alt_irq_func */
 void pic_set_alt_irq_func(PicState2 *s, SetIRQFunc *alt_irq_func,
                           void *alt_irq_opaque)
 {

@@ -29,17 +29,17 @@
 #include "sysemu.h"
 
 //#define DEBUG_PCI
-
+/* PCI总线 */
 struct PCIBus {
     int bus_num;
     int devfn_min;
-    pci_set_irq_fn set_irq;
+    pci_set_irq_fn set_irq; /* 中断设置函数 */
     pci_map_irq_fn map_irq;
     uint32_t config_reg; /* XXX: suppress */
     /* low level pic */
     SetIRQFunc *low_set_irq;
     qemu_irq *irq_opaque;
-    PCIDevice *devices[256];
+    PCIDevice *devices[256]; /* 记录所谓的PCI设备 */
     PCIDevice *parent_dev;
     PCIBus *next;
     /* The bus IRQ state is the logical OR of the connected devices.
@@ -88,6 +88,9 @@ static int  pcibus_load(QEMUFile *f, void *opaque, int version_id)
     return 0;
 }
 
+/* 注册总线
+ * @param devfn_min 最小的设备的编号
+ */
 PCIBus *pci_register_bus(pci_set_irq_fn set_irq, pci_map_irq_fn map_irq,
                          qemu_irq *pic, int devfn_min, int nirq)
 {
@@ -236,6 +239,11 @@ int pci_assign_devaddr(const char *addr, int *domp, int *busp, unsigned *slotp)
 }
 
 /* -1 for devfn means auto assign */
+/* 注册pci设备
+ * @param name 设备名称
+ * @param instance_size 实例大小
+ * @param devfn 设备号,如果为-1.表示由函数分配
+ */
 PCIDevice *pci_register_device(PCIBus *bus, const char *name,
                                int instance_size, int devfn,
                                PCIConfigReadFunc *config_read,
@@ -248,15 +256,15 @@ PCIDevice *pci_register_device(PCIBus *bus, const char *name,
 
     if (devfn < 0) {
         for(devfn = bus->devfn_min ; devfn < 256; devfn += 8) {
-            if (!bus->devices[devfn])
+            if (!bus->devices[devfn]) /* 挑选一个空闲的位置 */
                 goto found;
         }
         return NULL;
     found: ;
     }
     pci_dev = qemu_mallocz(instance_size);
-    pci_dev->bus = bus;
-    pci_dev->devfn = devfn;
+    pci_dev->bus = bus; /* 记录下设备所在的总线 */
+    pci_dev->devfn = devfn; /* 记录下设备编号 */
     pstrcpy(pci_dev->name, sizeof(pci_dev->name), name);
     memset(pci_dev->irq_state, 0, sizeof(pci_dev->irq_state));
     pci_set_default_subsystem_id(pci_dev);
@@ -267,7 +275,7 @@ PCIDevice *pci_register_device(PCIBus *bus, const char *name,
         config_write = pci_default_write_config;
     pci_dev->config_read = config_read;
     pci_dev->config_write = config_write;
-    pci_dev->irq_index = pci_irq_index++;
+    pci_dev->irq_index = pci_irq_index++; /* 记录下中断索引值 */
     bus->devices[devfn] = pci_dev;
     pci_dev->irq = qemu_allocate_irqs(pci_set_irq, pci_dev, 4);
     return pci_dev;

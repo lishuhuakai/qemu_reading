@@ -1946,6 +1946,7 @@ static inline void tlb_set_dirty(CPUState *env, target_ulong vaddr)
    is permitted. Return 0 if OK or 2 if the page could not be mapped
    (can only happen in non SOFTMMU mode for I/O pages or pages
    conflicting with the host address space). */
+/* 添加一个新的TLB表项 */
 int tlb_set_page_exec(CPUState *env, target_ulong vaddr,
                       target_phys_addr_t paddr, int prot,
                       int mmu_idx, int is_softmmu)
@@ -1961,11 +1962,11 @@ int tlb_set_page_exec(CPUState *env, target_ulong vaddr,
     CPUWatchpoint *wp;
     target_phys_addr_t iotlb;
 
-    p = phys_page_find(paddr >> TARGET_PAGE_BITS);
+    p = phys_page_find(paddr >> TARGET_PAGE_BITS); /* 查找页描述符 */
     if (!p) {
         pd = IO_MEM_UNASSIGNED;
     } else {
-        pd = p->phys_offset;
+        pd = p->phys_offset; /* 获得相对于内存块的偏移 */
     }
 #if defined(DEBUG_TLB)
     printf("tlb_set_page: vaddr=" TARGET_FMT_lx " paddr=0x%08x prot=%x idx=%d smmu=%d pd=0x%08lx\n",
@@ -1978,7 +1979,7 @@ int tlb_set_page_exec(CPUState *env, target_ulong vaddr,
         /* IO memory case (romd handled later) */
         address |= TLB_MMIO;
     }
-    addend = (unsigned long)phys_ram_base + (pd & TARGET_PAGE_MASK);
+    addend = (unsigned long)phys_ram_base + (pd & TARGET_PAGE_MASK); /* 宿主机的内存地址 */
     if ((pd & ~TARGET_PAGE_MASK) <= IO_MEM_ROM) {
         /* Normal RAM.  */
         iotlb = pd & TARGET_PAGE_MASK;
