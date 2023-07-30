@@ -2,7 +2,6 @@
  * QEMU Floppy disk emulator (Intel 82078)
  *
  * Copyright (c) 2003, 2007 Jocelyn Mayer
- * Copyright (c) 2008 Herv� Poussineau
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -1090,7 +1089,9 @@ static void fdctrl_stop_transfer (fdctrl_t *fdctrl, uint8_t status0,
     fdctrl_set_fifo(fdctrl, 7, 1);
 }
 
-/* Prepare a data transfer (either DMA or FIFO) */
+/* Prepare a data transfer (either DMA or FIFO)
+ * 准备数据传输
+ */
 static void fdctrl_start_transfer (fdctrl_t *fdctrl, int direction)
 {
     fdrive_t *cur_drv;
@@ -1203,7 +1204,9 @@ static void fdctrl_start_transfer_del (fdctrl_t *fdctrl, int direction)
     fdctrl_stop_transfer(fdctrl, FD_SR0_ABNTERM | FD_SR0_SEEK, 0x00, 0x00);
 }
 
-/* handlers for DMA transfers */
+/* handlers for DMA transfers 
+ * 回调函数,准备dma传输
+ */
 static int fdctrl_transfer_handler (void *opaque, int nchan,
                                     int dma_pos, int dma_len)
 {
@@ -1253,7 +1256,7 @@ static int fdctrl_transfer_handler (void *opaque, int nchan,
             }
         }
         switch (fdctrl->data_dir) {
-        case FD_DIR_READ:
+        case FD_DIR_READ: /* 读 */
             /* READ commands */
             DMA_write_memory (nchan, fdctrl->fifo + rel_pos,
                               fdctrl->data_pos, len);

@@ -40,23 +40,26 @@
 struct dma_regs {
     int now[2];
     uint16_t base[2];
-    uint8_t mode;
+    uint8_t mode; /* 模式寄存器 */
+    /* page以及pageh以及now[0]用于构建32bit的目标地址 */
     uint8_t page;
     uint8_t pageh;
     uint8_t dack;
     uint8_t eop;
-    DMA_transfer_handler transfer_handler;
+    DMA_transfer_handler transfer_handler; /* dma传输函数 */
     void *opaque;
 };
 
 #define ADDR 0
 #define COUNT 1
 
+/* dma控制器 */
 static struct dma_cont {
-    uint8_t status;
-    uint8_t command;
-    uint8_t mask;
-    uint8_t flip_flop;
+    uint8_t status; /* 状态寄存器 */
+    uint8_t command; /* 命令寄存器 */
+    uint8_t mask; /* 屏蔽寄存器 */
+    /* flip_flop为0,则读/写低字节,否则读/些高字节 */
+    uint8_t flip_flop; /* 触位器 */
     int dshift;
     struct dma_regs regs[4];
 } dma_controllers[2];
@@ -85,12 +88,12 @@ static void write_page (void *opaque, uint32_t nport, uint32_t data)
     struct dma_cont *d = opaque;
     int ichan;
 
-    ichan = channels[nport & 7];
+    ichan = channels[nport & 7]; /* 选择通道 */
     if (-1 == ichan) {
         dolog ("invalid channel %#x %#x\n", nport, data);
         return;
     }
-    d->regs[ichan].page = data;
+    d->regs[ichan].page = data; /* 页号的低字节 */
 }
 
 static void write_pageh (void *opaque, uint32_t nport, uint32_t data)
@@ -103,7 +106,7 @@ static void write_pageh (void *opaque, uint32_t nport, uint32_t data)
         dolog ("invalid channel %#x %#x\n", nport, data);
         return;
     }
-    d->regs[ichan].pageh = data;
+    d->regs[ichan].pageh = data; /* 页号的高字节 */
 }
 
 static uint32_t read_page (void *opaque, uint32_t nport)
@@ -132,15 +135,19 @@ static uint32_t read_pageh (void *opaque, uint32_t nport)
     return d->regs[ichan].pageh;
 }
 
+/* dma通道的初始化
+ * @param ichan 通道号
+ */
 static inline void init_chan (struct dma_cont *d, int ichan)
 {
     struct dma_regs *r;
 
     r = d->regs + ichan;
-    r->now[ADDR] = r->base[ADDR] << d->dshift;
+    r->now[ADDR] = r->base[ADDR] << d->dshift; /* 记录下传输地址 */
     r->now[COUNT] = 0;
 }
 
+/* 获取flip_flop的值,这个值每次都会翻转 */
 static inline int getff (struct dma_cont *d)
 {
     int ff;
@@ -172,6 +179,7 @@ static uint32_t read_chan (void *opaque, uint32_t nport)
     return (val >> (d->dshift + (ff << 3))) & 0xff;
 }
 
+/* 设置通道 */
 static void write_chan (void *opaque, uint32_t nport, uint32_t data)
 {
     struct dma_cont *d = opaque;
@@ -182,14 +190,15 @@ static void write_chan (void *opaque, uint32_t nport, uint32_t data)
     ichan = iport >> 1;
     nreg = iport & 1;
     r = d->regs + ichan;
-    if (getff (d)) {
+    if (getff (d)) { /* 读/写高字节 */
         r->base[nreg] = (r->base[nreg] & 0xff) | ((data << 8) & 0xff00);
         init_chan (d, ichan);
-    } else {
+    } else { /* 读/写低字节 */
         r->base[nreg] = (r->base[nreg] & 0xff00) | (data & 0xff);
     }
 }
 
+/* 设置dma控制器 */
 static void write_cont (void *opaque, uint32_t nport, uint32_t data)
 {
     struct dma_cont *d = opaque;
@@ -202,16 +211,16 @@ static void write_cont (void *opaque, uint32_t nport, uint32_t data)
             dolog ("command %#x not supported\n", data);
             return;
         }
-        d->command = data;
+        d->command = data; /* 设置命令寄存器 */
         break;
 
     case 0x09:
-        ichan = data & 3;
+        ichan = data & 3; /* 通道 */
         if (data & 4) {
-            d->status |= 1 << (ichan + 4);
+            d->status |= 1 << (ichan + 4); /* 设置dma请求 */
         }
         else {
-            d->status &= ~(1 << (ichan + 4));
+            d->status &= ~(1 << (ichan + 4)); /* 清除dma请求 */
         }
         d->status &= ~(1 << ichan);
         DMA_run();
@@ -227,20 +236,30 @@ static void write_cont (void *opaque, uint32_t nport, uint32_t data)
 
     case 0x0b:                  /* mode */
         {
-            ichan = data & 3;
+            ichan = data & 3; /* 获取通道编号 */
 #ifdef DEBUG_DMA
             {
                 int op, ai, dir, opmode;
+               /* 00 校验传送
+                * 01 写传送
+                * 10 读传送
+                * 11 非法
+                */
                 op = (data >> 2) & 3;
-                ai = (data >> 4) & 1;
-                dir = (data >> 5) & 1;
+                ai = (data >> 4) & 1;  /* 0表示禁止自动初始化,否则允许自动初始化 */
+                dir = (data >> 5) & 1; /* 0表示地址+1,1表示地址-1 */
+               /* 00 请求传送方式 
+                * 01 单字节传送方式
+                * 10 块传送方式
+                * 11 级联方式
+                */
                 opmode = (data >> 6) & 3;
 
                 linfo ("ichan %d, op %d, ai %d, dir %d, opmode %d\n",
                        ichan, op, ai, dir, opmode);
             }
 #endif
-            d->regs[ichan].mode = data;
+            d->regs[ichan].mode = data; /* 设置模式 */
             break;
         }
 
@@ -301,6 +320,7 @@ static uint32_t read_cont (void *opaque, uint32_t nport)
     return val;
 }
 
+/* 读取传输模式 */
 int DMA_get_channel_mode (int nchan)
 {
     return dma_controllers[nchan > 3].regs[nchan & 3].mode;
@@ -313,7 +333,7 @@ void DMA_hold_DREQ (int nchan)
     ncont = nchan > 3;
     ichan = nchan & 3;
     linfo ("held cont=%d chan=%d\n", ncont, ichan);
-    dma_controllers[ncont].status |= 1 << (ichan + 4);
+    dma_controllers[ncont].status |= 1 << (ichan + 4); /* ichan号通道发生dma请求 */
     DMA_run();
 }
 
@@ -335,7 +355,7 @@ static void channel_run (int ncont, int ichan)
 #ifdef DEBUG_DMA
     int dir, opmode;
 
-    dir = (r->mode >> 5) & 1;
+    dir = (r->mode >> 5) & 1; /* 方向 */
     opmode = (r->mode >> 6) & 3;
 
     if (dir) {
@@ -346,15 +366,17 @@ static void channel_run (int ncont, int ichan)
     }
 #endif
 
-    r = dma_controllers[ncont].regs + ichan;
+    r = dma_controllers[ncont].regs + ichan; /* 获得通道的寄存器 */
+    /* 开始数据传输 */
     n = r->transfer_handler (r->opaque, ichan + (ncont << 2),
                              r->now[COUNT], (r->base[COUNT] + 1) << ncont);
-    r->now[COUNT] = n;
+    r->now[COUNT] = n; /* 记录已经传输的字节数目 */
     ldebug ("dma_pos %d size %d\n", n, (r->base[COUNT] + 1) << ncont);
 }
 
 static QEMUBH *dma_bh;
 
+/* 运行DMA */
 static void DMA_run (void)
 {
     struct dma_cont *d;
@@ -364,11 +386,12 @@ static void DMA_run (void)
     d = dma_controllers;
 
     for (icont = 0; icont < 2; icont++, d++) {
-        for (ichan = 0; ichan < 4; ichan++) {
+        for (ichan = 0; ichan < 4; ichan++) { /* 一共4个通道 */
             int mask;
-
             mask = 1 << ichan;
-
+            /* d->mask & mask为0表示ichan这个通道的请求没有被屏蔽掉
+             * d->status & (mask << 4)不为0说明ichan通道存在请求
+             */
             if ((0 == (d->mask & mask)) && (0 != (d->status & (mask << 4)))) {
                 channel_run (icont, ichan);
                 rearm = 1;
@@ -385,6 +408,10 @@ static void DMA_run_bh(void *unused)
     DMA_run();
 }
 
+/* 注册通道
+* @param nchan 通道号
+ * @param transfer_handler 回调函数
+ */
 void DMA_register_channel (int nchan,
                            DMA_transfer_handler transfer_handler,
                            void *opaque)
@@ -392,14 +419,20 @@ void DMA_register_channel (int nchan,
     struct dma_regs *r;
     int ichan, ncont;
 
-    ncont = nchan > 3;
-    ichan = nchan & 3;
+    ncont = nchan > 3; /* dma控制器编号,因为1个dma控制仅有4个通道 */
+    ichan = nchan & 3; /* dma通道编号 */
 
     r = dma_controllers[ncont].regs + ichan;
-    r->transfer_handler = transfer_handler;
+    r->transfer_handler = transfer_handler; /* 记录下回调函数 */
     r->opaque = opaque;
 }
 
+/* DMA执行读取动作,也就是将数据读取到buf之中
+ * @param nchan 通道编号
+ * @param buf 目的
+ * @param pos 偏移
+ * @param len 要读取的数据的长度
+ */
 int DMA_read_memory (int nchan, void *buf, int pos, int len)
 {
     struct dma_regs *r = &dma_controllers[nchan > 3].regs[nchan & 3];
@@ -422,15 +455,22 @@ int DMA_read_memory (int nchan, void *buf, int pos, int len)
     return len;
 }
 
+/* DMA执行写操作,也就是将buf中存放的长度为len的数据写入到对应的内存处
+ * @param nchan 通道编号
+ * @param buf 要拷贝的数据存放的位置
+ * @param pos 偏移
+ * @param len 要拷贝的数据的长度
+ */
 int DMA_write_memory (int nchan, void *buf, int pos, int len)
 {
     struct dma_regs *r = &dma_controllers[nchan > 3].regs[nchan & 3];
+    /* 构建目标地址, pageh取7bit,page取8bit,now[0]取16bit */
     target_phys_addr_t addr = ((r->pageh & 0x7f) << 24) | (r->page << 16) | r->now[ADDR];
 
     if (r->mode & 0x20) {
         int i;
         uint8_t *p = buf;
-
+        /* 从buf开始拷贝len字节的数据到addr-pos-len开始的内存处 */
         cpu_physical_memory_write (addr - pos - len, buf, len);
         /* What about 16bit transfers? */
         for (i = 0; i < len; i++) {
@@ -559,6 +599,7 @@ static int dma_load (QEMUFile *f, void *opaque, int version_id)
     return 0;
 }
 
+/* dma初始化 */
 void DMA_init (int high_page_enable)
 {
     dma_init2(&dma_controllers[0], 0x00, 0, 0x80,

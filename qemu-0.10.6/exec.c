@@ -2957,6 +2957,14 @@ void cpu_physical_memory_rw(target_phys_addr_t addr, uint8_t *buf,
 }
 
 #else
+/* 物理内存读/写
+ * @param addr 物理地址
+ * @param buf 缓冲区
+ * @param len 长度
+ * @param is_write 是否为写操作
+ * 读操作指的是,将addr处开始的长度为len的数据读取到buf之中
+ * 写操作指的是,将buf之中长度为len的数据写入到addr指定的地址
+ */
 void cpu_physical_memory_rw(target_phys_addr_t addr, uint8_t *buf,
                             int len, int is_write)
 {
@@ -2979,7 +2987,7 @@ void cpu_physical_memory_rw(target_phys_addr_t addr, uint8_t *buf,
             pd = p->phys_offset;
         }
 
-        if (is_write) {
+        if (is_write) { /* 写操作 */
             if ((pd & ~TARGET_PAGE_MASK) != IO_MEM_RAM) {
                 target_phys_addr_t addr1 = addr;
                 io_index = (pd >> IO_MEM_SHIFT) & (IO_MEM_NB_ENTRIES - 1);
@@ -3008,7 +3016,7 @@ void cpu_physical_memory_rw(target_phys_addr_t addr, uint8_t *buf,
                 addr1 = (pd & TARGET_PAGE_MASK) + (addr & ~TARGET_PAGE_MASK);
                 /* RAM case */
                 ptr = phys_ram_base + addr1;
-                memcpy(ptr, buf, l);
+                memcpy(ptr, buf, l); /* 将buf中的数据拷贝到ptr地址处 */
                 if (!cpu_physical_memory_is_dirty(addr1)) {
                     /* invalidate code */
                     tb_invalidate_phys_page_range(addr1, addr1 + l, 0);
@@ -3017,7 +3025,7 @@ void cpu_physical_memory_rw(target_phys_addr_t addr, uint8_t *buf,
                         (0xff & ~CODE_DIRTY_FLAG);
                 }
             }
-        } else {
+        } else { /* 读 */
             if ((pd & ~TARGET_PAGE_MASK) > IO_MEM_ROM &&
                 !(pd & IO_MEM_ROMD)) {
                 target_phys_addr_t addr1 = addr;
