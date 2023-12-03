@@ -121,12 +121,17 @@ static int raw_open(BlockDriverState *bs, const char *filename, int flags)
     return 0;
 }
 
+/* 读取
+ * @param offset 偏移
+ * @param buf 读取的数据将写入这个缓存之中
+ * @param count 要读取的数据长度
+ */
 static int raw_pread(BlockDriverState *bs, int64_t offset,
                      uint8_t *buf, int count)
 {
     BDRVRawState *s = bs->opaque;
     OVERLAPPED ov;
-    DWORD ret_count;
+    DWORD ret_count; /* 实际读取的数据长度 */
     int ret;
 
     memset(&ov, 0, sizeof(ov));
@@ -145,6 +150,10 @@ static int raw_pread(BlockDriverState *bs, int64_t offset,
     return ret_count;
 }
 
+/* 写数据
+ * @param offset 偏移
+ * @param buf 缓冲区首地址
+ */
 static int raw_pwrite(BlockDriverState *bs, int64_t offset,
                       const uint8_t *buf, int count)
 {
@@ -323,6 +332,7 @@ static int64_t raw_getlength(BlockDriverState *bs)
     return l.QuadPart;
 }
 
+/* 创建一个raw文件 */
 static int raw_create(const char *filename, int64_t total_size,
                       const char *backing_file, int flags)
 {

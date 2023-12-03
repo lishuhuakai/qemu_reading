@@ -43,14 +43,43 @@
 #define USE_DMA_CDROM
 
 /* Bits of HD_STATUS */
+/* 命令执行错误.当该位置位时说明前一个命令以出错结束.此时出错寄存器和
+ * 状态寄存器中的比特位含有引起错误的一些信息.
+ */
 #define ERR_STAT		0x01
+/* 收到索引.当磁盘旋转遇到索引标志时会设置该位. */
 #define INDEX_STAT		0x02
+/* ECC 校验错.当遇到一个可恢复的数据错误而且已得到纠正,就会设置该位.
+ * 这种情况不会中断一个多扇区读操作. */
 #define ECC_STAT		0x04	/* Corrected error */
+/* 数据请求服务.当该位被置位时,表示驱动器已经准备好在主机和数据端口之
+ * 间传输一个字或一个字节的数据.
+ */
 #define DRQ_STAT		0x08
+/* 驱动器寻道结束.当该位被置位时,表示寻道操作已经完成,磁头已经停在指
+ * 定的磁道上.当发生错误时,该位并不会改变.只有主机读取了状态寄存器后,
+ * 该位就会再次表示当前寻道的完成状态.
+ */
 #define SEEK_STAT		0x10
 #define SRV_STAT		0x10
+/* 驱动器故障(写出错).当发生错误时,该位并不会改变.只有主机读取了状态
+ * 寄存器后,该位就会再次表示当前写操作的出错状态。
+ */
 #define WRERR_STAT		0x20
-#define READY_STAT		0x40
+/* 驱动器准备好(就绪).表示驱动器已经准备好接收命令.当发生错误时,该位
+ * 并不会改变。只有主机读取了状态寄存器后,该位就会再次表示当前驱动器就
+ * 绪状态.在开机时,应该复位该比特位,直到驱动器速度达到正常并且能够接
+ * 收命令. */
+#define READY_STAT		0x40 
+/* 控制器忙碌.当驱动器正在操作由驱动器的控制器设置该位.此时主机不能发
+ * 送命令块.而对任何命令寄存器的读操作将返回状态寄存器的值.在下列条件
+ * 下该位会被置位:
+ * + 在机器复位信号 RESET 变负或者设备控制寄存器的 SRST 被设置之后 400 纳
+ * 秒以内.在机器复位之后要求该位置位状态不能超过 30 秒.
+ * + 主机在向命令寄存器写重新校正、读、读缓冲、初始化驱动器参数以及执行
+ * 诊断等命令的 400 纳秒以内.
+ * + 在写操作、写缓冲或格式化磁道命令期间传输了 512 字节数据的 5 微秒之内.
+*/
 #define BUSY_STAT		0x80
 
 /* Bits for HD_ERROR */
@@ -88,10 +117,12 @@
  *	0x09->0x0F Reserved
  */
 #define WIN_RECAL			0x10
+/* 驱动器重新校正(复位) */
 #define WIN_RESTORE			WIN_RECAL
 /*
  *	0x10->0x1F Reserved
  */
+/* 读扇区 */
 #define WIN_READ			0x20 /* 28-Bit */
 #define WIN_READ_ONCE			0x21 /* 28-Bit without retries */
 #define WIN_READ_LONG			0x22 /* 28-Bit */
@@ -107,6 +138,7 @@
 /*
  *	0x2A->0x2F Reserved
  */
+/* 写扇区 */
 #define WIN_WRITE			0x30 /* 28-Bit */
 #define WIN_WRITE_ONCE			0x31 /* 28-Bit without retries */
 #define WIN_WRITE_LONG			0x32 /* 28-Bit */
@@ -124,23 +156,29 @@
 /*
  *	0x3D->0x3F Reserved
  */
+/* 扇区校验 */
 #define WIN_VERIFY			0x40 /* 28-Bit - Read Verify Sectors */
 #define WIN_VERIFY_ONCE			0x41 /* 28-Bit - without retries */
 #define WIN_VERIFY_EXT			0x42 /* 48-Bit */
 /*
  *	0x43->0x4F Reserved
  */
+/* 格式化磁道 */
 #define WIN_FORMAT			0x50
 /*
  *	0x51->0x5F Reserved
  */
+/* 控制器初始化 */
 #define WIN_INIT			0x60
 /*
  *	0x61->0x5F Reserved
  */
+/* 寻道 */
 #define WIN_SEEK			0x70 /* 0x70-0x7F Reserved */
 #define CFA_TRANSLATE_SECTOR		0x87 /* CFA Translate Sector */
+/* 控制器诊断 */
 #define WIN_DIAGNOSE			0x90
+/* 建立驱动器参数 */
 #define WIN_SPECIFY			0x91 /* set drive geometry translation */
 #define WIN_DOWNLOAD_MICROCODE		0x92
 #define WIN_STANDBYNOW2			0x94
@@ -428,6 +466,7 @@ typedef struct IDEState {
     int io_buffer_size;
     QEMUSGList sg;
     /* PIO transfer handling */
+    /* 每个中断要操作的扇区数目 */
     int req_nb_sectors; /* number of sectors per interrupt */
     EndTransferFunc *end_transfer_func;
     uint8_t *data_ptr;
@@ -498,7 +537,7 @@ typedef struct BMDMAState {
     BlockDriverCompletionFunc *dma_cb;
     BlockDriverAIOCB *aiocb;
     int64_t sector_num;
-    uint32_t nsector;
+    uint32_t nsector; /* 待操作的扇区数 */
 } BMDMAState;
 
 typedef struct PCIIDEState {
@@ -773,8 +812,8 @@ static void ide_transfer_start(IDEState *s, uint8_t *buf, int size,
     s->end_transfer_func = end_transfer_func;
     s->data_ptr = buf;
     s->data_end = buf + size;
-    if (!(s->status & ERR_STAT))
-        s->status |= DRQ_STAT;
+    if (!(s->status & ERR_STAT)) /* 如果没有错误发生 */
+        s->status |= DRQ_STAT; /* 触发中断 */
 }
 
 static void ide_transfer_stop(IDEState *s)
@@ -839,6 +878,7 @@ static void ide_rw_error(IDEState *s) {
     ide_set_irq(s);
 }
 
+/* 读取扇区的数据 */
 static void ide_sector_read(IDEState *s)
 {
     int64_t sector_num;
@@ -846,7 +886,7 @@ static void ide_sector_read(IDEState *s)
 
     s->status = READY_STAT | SEEK_STAT;
     s->error = 0; /* not needed by IDE spec, but needed by Windows */
-    sector_num = ide_get_sector(s);
+    sector_num = ide_get_sector(s); /* 从寄存器中读取出来,要读取的扇区的编号 */
     n = s->nsector;
     if (n == 0) {
         /* no more sector to read from disk */
@@ -857,14 +897,14 @@ static void ide_sector_read(IDEState *s)
 #endif
         if (n > s->req_nb_sectors)
             n = s->req_nb_sectors;
-        ret = bdrv_read(s->bs, sector_num, s->io_buffer, n);
+        ret = bdrv_read(s->bs, sector_num, s->io_buffer, n); /* 将数据读取io_buffer之中 */
         if (ret != 0) {
             ide_rw_error(s);
             return;
         }
         ide_transfer_start(s, s->io_buffer, 512 * n, ide_sector_read);
-        ide_set_irq(s);
-        ide_set_sector(s, sector_num + n);
+        ide_set_irq(s);  /* 触发中断 */
+        ide_set_sector(s, sector_num + n);  /* 重新设置寄存器,记录下下一次要读取的扇区号 */
         s->nsector -= n;
     }
 }
@@ -880,7 +920,7 @@ static int dma_buf_prepare(BMDMAState *bm, int is_write)
     } prd;
     int l, len;
 
-    qemu_sglist_init(&s->sg, s->nsector / (TARGET_PAGE_SIZE/512) + 1);
+    qemu_sglist_init(&s->sg, s->nsector / (TARGET_PAGE_SIZE/512) + 1); /* 分配缓存空间 */
     s->io_buffer_size = 0;
     for(;;) {
         if (bm->cur_prd_len == 0) {
@@ -888,9 +928,10 @@ static int dma_buf_prepare(BMDMAState *bm, int is_write)
             if (bm->cur_prd_last ||
                 (bm->cur_addr - bm->addr) >= 4096)
                 return s->io_buffer_size != 0;
+            /* 读8个字节的数据到prd之中 */
             cpu_physical_memory_read(bm->cur_addr, (uint8_t *)&prd, 8);
             bm->cur_addr += 8;
-            prd.addr = le32_to_cpu(prd.addr);
+            prd.addr = le32_to_cpu(prd.addr); /* 记录下要操作的地址以及长度 */
             prd.size = le32_to_cpu(prd.size);
             len = prd.size & 0xfffe;
             if (len == 0)
@@ -995,6 +1036,7 @@ static int dma_buf_rw(BMDMAState *bm, int is_write)
     return 1;
 }
 
+/* dma读 */
 static void ide_read_dma_cb(void *opaque, int ret)
 {
     BMDMAState *bm = opaque;
@@ -1004,12 +1046,12 @@ static void ide_read_dma_cb(void *opaque, int ret)
 
     if (ret < 0) {
         dma_buf_commit(s, 1);
-	ide_dma_error(s);
-	return;
+        ide_dma_error(s);
+        return;
     }
 
     n = s->io_buffer_size >> 9;
-    sector_num = ide_get_sector(s);
+    sector_num = ide_get_sector(s); /* 要操作的扇区号 */
     if (n > 0) {
         dma_buf_commit(s, 1);
         sector_num += n;
@@ -1018,9 +1060,9 @@ static void ide_read_dma_cb(void *opaque, int ret)
     }
 
     /* end of transfer ? */
-    if (s->nsector == 0) {
+    if (s->nsector == 0) { /* dma读完成 */
         s->status = READY_STAT | SEEK_STAT;
-        ide_set_irq(s);
+        ide_set_irq(s); /* 触发中断 */
     eot:
         bm->status &= ~BM_STATUS_DMAING;
         bm->status |= BM_STATUS_INT;
@@ -1039,10 +1081,12 @@ static void ide_read_dma_cb(void *opaque, int ret)
 #ifdef DEBUG_AIO
     printf("aio_read: sector_num=%" PRId64 " n=%d\n", sector_num, n);
 #endif
+    /* 如果没有读完,就发起下一轮读 */
     bm->aiocb = dma_bdrv_read(s->bs, &s->sg, sector_num, ide_read_dma_cb, bm);
     ide_dma_submit_check(s, ide_read_dma_cb, bm);
 }
 
+/* 通过dma的方式来读取数据 */
 static void ide_sector_read_dma(IDEState *s)
 {
     s->status = READY_STAT | SEEK_STAT | DRQ_STAT | BUSY_STAT;
@@ -1071,7 +1115,7 @@ static void ide_sector_write(IDEState *s)
     n = s->nsector;
     if (n > s->req_nb_sectors)
         n = s->req_nb_sectors;
-    ret = bdrv_write(s->bs, sector_num, s->io_buffer, n);
+    ret = bdrv_write(s->bs, sector_num, s->io_buffer, n); /* 同步写 */
 
     if (ret != 0) {
         if (ide_handle_write_error(s, -ret, BM_STATUS_PIO_RETRY))
@@ -1081,14 +1125,14 @@ static void ide_sector_write(IDEState *s)
     s->nsector -= n;
     if (s->nsector == 0) {
         /* no more sectors to write */
-        ide_transfer_stop(s);
+        ide_transfer_stop(s); /* 数据写入完成 */
     } else {
         n1 = s->nsector;
         if (n1 > s->req_nb_sectors)
             n1 = s->req_nb_sectors;
         ide_transfer_start(s, s->io_buffer, 512 * n1, ide_sector_write);
     }
-    ide_set_sector(s, sector_num + n);
+    ide_set_sector(s, sector_num + n); /* 更新下一个要操作的扇区号 */
 
 #ifdef TARGET_I386
     if (win2k_install_hack && ((++s->irq_count % 16) == 0)) {
@@ -1121,6 +1165,7 @@ static void ide_dma_restart_cb(void *opaque, int running, int reason)
     }
 }
 
+/* dma写操作 */
 static void ide_write_dma_cb(void *opaque, int ret)
 {
     BMDMAState *bm = opaque;
@@ -1143,9 +1188,9 @@ static void ide_write_dma_cb(void *opaque, int ret)
     }
 
     /* end of transfer ? */
-    if (s->nsector == 0) {
+    if (s->nsector == 0) { /* 传输完成 */
         s->status = READY_STAT | SEEK_STAT;
-        ide_set_irq(s);
+        ide_set_irq(s); /* 触发中断 */
     eot:
         bm->status &= ~BM_STATUS_DMAING;
         bm->status |= BM_STATUS_INT;
@@ -1160,13 +1205,14 @@ static void ide_write_dma_cb(void *opaque, int ret)
     /* launch next transfer */
     if (dma_buf_prepare(bm, 0) == 0)
         goto eot;
-#ifdef DEBUG_AIO
+#ifdef DEBUG_AIO /* 异步写 */
     printf("aio_write: sector_num=%" PRId64 " n=%d\n", sector_num, n);
 #endif
     bm->aiocb = dma_bdrv_write(s->bs, &s->sg, sector_num, ide_write_dma_cb, bm);
     ide_dma_submit_check(s, ide_write_dma_cb, bm);
 }
 
+/* 开始dma写操作 */
 static void ide_sector_write_dma(IDEState *s)
 {
     s->status = READY_STAT | SEEK_STAT | DRQ_STAT | BUSY_STAT;
@@ -1419,22 +1465,22 @@ static void ide_atapi_cmd_read_dma_cb(void *opaque, int ret)
     }
 
     if (s->io_buffer_size > 0) {
-	/*
-	 * For a cdrom read sector command (s->lba != -1),
-	 * adjust the lba for the next s->io_buffer_size chunk
-	 * and dma the current chunk.
-	 * For a command != read (s->lba == -1), just transfer
-	 * the reply data.
-	 */
-	if (s->lba != -1) {
-	    if (s->cd_sector_size == 2352) {
-		n = 1;
-		cd_data_to_raw(s->io_buffer, s->lba);
-	    } else {
-		n = s->io_buffer_size >> 11;
-	    }
-	    s->lba += n;
-	}
+        /*
+         * For a cdrom read sector command (s->lba != -1),
+         * adjust the lba for the next s->io_buffer_size chunk
+         * and dma the current chunk.
+         * For a command != read (s->lba == -1), just transfer
+         * the reply data.
+         */
+        if (s->lba != -1) {
+            if (s->cd_sector_size == 2352) {
+                n = 1;
+                cd_data_to_raw(s->io_buffer, s->lba);
+            } else {
+                n = s->io_buffer_size >> 11;
+            }
+            s->lba += n;
+        }
         s->packet_transfer_size -= s->io_buffer_size;
         if (dma_buf_rw(bm, 1) == 0)
             goto eot;
@@ -1443,7 +1489,7 @@ static void ide_atapi_cmd_read_dma_cb(void *opaque, int ret)
     if (s->packet_transfer_size <= 0) {
         s->status = READY_STAT | SEEK_STAT;
         s->nsector = (s->nsector & ~7) | ATAPI_INT_REASON_IO | ATAPI_INT_REASON_CD;
-        ide_set_irq(s);
+        ide_set_irq(s); /* 发起中断 */
     eot:
         bm->status &= ~BM_STATUS_DMAING;
         bm->status |= BM_STATUS_INT;
@@ -1481,6 +1527,7 @@ static void ide_atapi_cmd_read_dma_cb(void *opaque, int ret)
 
 /* start a CD-CDROM read command with DMA */
 /* XXX: test if DMA is available */
+/* 开始dma读 */
 static void ide_atapi_cmd_read_dma(IDEState *s, int lba, int nb_sectors,
                                    int sector_size)
 {
@@ -1612,6 +1659,7 @@ static int ide_dvd_read_structure(IDEState *s, int format,
     }
 }
 
+/* 关于atapi,它主要应用在cd-rom上 */
 static void ide_atapi_cmd(IDEState *s)
 {
     const uint8_t *packet;
@@ -1633,13 +1681,13 @@ static void ide_atapi_cmd(IDEState *s)
     /* If there's a UNIT_ATTENTION condition pending, only
        REQUEST_SENSE and INQUIRY commands are allowed to complete. */
     if (s->sense_key == SENSE_UNIT_ATTENTION &&
-	s->io_buffer[0] != GPCMD_REQUEST_SENSE &&
-	s->io_buffer[0] != GPCMD_INQUIRY) {
-	ide_atapi_cmd_check_status(s);
-	return;
+        s->io_buffer[0] != GPCMD_REQUEST_SENSE &&
+        s->io_buffer[0] != GPCMD_INQUIRY) {
+        ide_atapi_cmd_check_status(s);
+        return;
     }
     switch(s->io_buffer[0]) {
-    case GPCMD_TEST_UNIT_READY:
+    case GPCMD_TEST_UNIT_READY: /* 检查盘片是否已经Ready,即是否能够接受media-access命令 */
         if (bdrv_is_inserted(s->bs)) {
             ide_atapi_cmd_ok(s);
         } else {
@@ -1728,7 +1776,7 @@ static void ide_atapi_cmd(IDEState *s)
             }
         }
         break;
-    case GPCMD_REQUEST_SENSE:
+    case GPCMD_REQUEST_SENSE: /* 向盘片请求sense data */
         max_len = packet[4];
         memset(buf, 0, 18);
         buf[0] = 0x70 | (1 << 7);
@@ -1900,7 +1948,7 @@ static void ide_atapi_cmd(IDEState *s)
             }
         }
         break;
-    case GPCMD_READ_CDVD_CAPACITY:
+    case GPCMD_READ_CDVD_CAPACITY: /* 读取CDVD容量 */
         {
             uint64_t total_sectors;
 
@@ -1969,7 +2017,7 @@ static void ide_atapi_cmd(IDEState *s)
             }
         }
         break;
-    case GPCMD_SET_SPEED:
+    case GPCMD_SET_SPEED: /* 设置速度 */
         ide_atapi_cmd_ok(s);
         break;
     case GPCMD_INQUIRY:
@@ -1987,7 +2035,7 @@ static void ide_atapi_cmd(IDEState *s)
         padstr8(buf + 32, 4, QEMU_VERSION);
         ide_atapi_cmd_reply(s, 36, max_len);
         break;
-    case GPCMD_GET_CONFIGURATION:
+    case GPCMD_GET_CONFIGURATION: /* 读取配置信息 */
         {
             uint32_t len;
             uint8_t index = 0;
@@ -2118,14 +2166,14 @@ static void ide_cmd_lba48_transform(IDEState *s, int lba48)
 	if (!s->nsector)
 	    s->nsector = 256;
     } else {
-	if (!s->nsector && !s->hob_nsector)
-	    s->nsector = 65536;
-	else {
-	    int lo = s->nsector;
-	    int hi = s->hob_nsector;
+        if (!s->nsector && !s->hob_nsector)
+            s->nsector = 65536;
+        else {
+            int lo = s->nsector;
+            int hi = s->hob_nsector;
 
-	    s->nsector = (hi << 8) | lo;
-	}
+            s->nsector = (hi << 8) | lo;
+        }
     }
 }
 
@@ -2157,43 +2205,43 @@ static void ide_ioport_write(void *opaque, uint32_t addr, uint32_t val)
     case 0:
         break;
     case 1:
-	ide_clear_hob(ide_if);
+        ide_clear_hob(ide_if);
         /* NOTE: data is written to the two drives */
-	ide_if[0].hob_feature = ide_if[0].feature;
-	ide_if[1].hob_feature = ide_if[1].feature;
+        ide_if[0].hob_feature = ide_if[0].feature;
+        ide_if[1].hob_feature = ide_if[1].feature;
         ide_if[0].feature = val;
         ide_if[1].feature = val;
         break;
     case 2:
-	ide_clear_hob(ide_if);
-	ide_if[0].hob_nsector = ide_if[0].nsector;
-	ide_if[1].hob_nsector = ide_if[1].nsector;
+        ide_clear_hob(ide_if);
+        ide_if[0].hob_nsector = ide_if[0].nsector;
+        ide_if[1].hob_nsector = ide_if[1].nsector;
         ide_if[0].nsector = val;
         ide_if[1].nsector = val;
         break;
     case 3:
-	ide_clear_hob(ide_if);
-	ide_if[0].hob_sector = ide_if[0].sector;
-	ide_if[1].hob_sector = ide_if[1].sector;
+        ide_clear_hob(ide_if);
+        ide_if[0].hob_sector = ide_if[0].sector;
+        ide_if[1].hob_sector = ide_if[1].sector;
         ide_if[0].sector = val;
         ide_if[1].sector = val;
         break;
     case 4:
-	ide_clear_hob(ide_if);
-	ide_if[0].hob_lcyl = ide_if[0].lcyl;
-	ide_if[1].hob_lcyl = ide_if[1].lcyl;
+        ide_clear_hob(ide_if);
+        ide_if[0].hob_lcyl = ide_if[0].lcyl;
+        ide_if[1].hob_lcyl = ide_if[1].lcyl;
         ide_if[0].lcyl = val;
         ide_if[1].lcyl = val;
         break;
     case 5:
-	ide_clear_hob(ide_if);
-	ide_if[0].hob_hcyl = ide_if[0].hcyl;
-	ide_if[1].hob_hcyl = ide_if[1].hcyl;
+        ide_clear_hob(ide_if);
+        ide_if[0].hob_hcyl = ide_if[0].hcyl;
+        ide_if[1].hob_hcyl = ide_if[1].hcyl;
         ide_if[0].hcyl = val;
         ide_if[1].hcyl = val;
         break;
     case 6:
-	/* FIXME: HOB readback uses bit 7 */
+        /* FIXME: HOB readback uses bit 7 */
         ide_if[0].select = (val & ~0x10) | 0xa0;
         ide_if[1].select = (val | 0x10) | 0xa0;
         /* select drive */
@@ -2233,11 +2281,11 @@ static void ide_ioport_write(void *opaque, uint32_t addr, uint32_t val)
             }
             ide_set_irq(s);
             break;
-        case WIN_SPECIFY:
+        case WIN_SPECIFY: /* 建立驱动器参数 */
         case WIN_RECAL:
             s->error = 0;
             s->status = READY_STAT | SEEK_STAT;
-            ide_set_irq(s);
+            ide_set_irq(s); /* 触发中断 */
             break;
         case WIN_SETMULT:
             if (s->is_cf && s->nsector == 0) {
@@ -2255,53 +2303,53 @@ static void ide_ioport_write(void *opaque, uint32_t addr, uint32_t val)
             ide_set_irq(s);
             break;
         case WIN_VERIFY_EXT:
-	    lba48 = 1;
+            lba48 = 1;
         case WIN_VERIFY:
         case WIN_VERIFY_ONCE:
             /* do sector number check ? */
-	    ide_cmd_lba48_transform(s, lba48);
+            ide_cmd_lba48_transform(s, lba48);
             s->status = READY_STAT | SEEK_STAT;
-            ide_set_irq(s);
+            ide_set_irq(s); /* 触发中断 */
             break;
-	case WIN_READ_EXT:
-	    lba48 = 1;
-        case WIN_READ:
+        case WIN_READ_EXT:
+            lba48 = 1;
+        case WIN_READ: /* 读扇区 */
         case WIN_READ_ONCE:
             if (!s->bs)
                 goto abort_cmd;
-	    ide_cmd_lba48_transform(s, lba48);
+            ide_cmd_lba48_transform(s, lba48);
             s->req_nb_sectors = 1;
             ide_sector_read(s);
             break;
-	case WIN_WRITE_EXT:
-	    lba48 = 1;
-        case WIN_WRITE:
+        case WIN_WRITE_EXT:
+            lba48 = 1;
+        case WIN_WRITE: /* 写扇区 */
         case WIN_WRITE_ONCE:
         case CFA_WRITE_SECT_WO_ERASE:
         case WIN_WRITE_VERIFY:
-	    ide_cmd_lba48_transform(s, lba48);
+            ide_cmd_lba48_transform(s, lba48);
             s->error = 0;
             s->status = SEEK_STAT | READY_STAT;
             s->req_nb_sectors = 1;
             ide_transfer_start(s, s->io_buffer, 512, ide_sector_write);
             s->media_changed = 1;
             break;
-	case WIN_MULTREAD_EXT:
-	    lba48 = 1;
-        case WIN_MULTREAD:
+        case WIN_MULTREAD_EXT:
+            lba48 = 1;
+        case WIN_MULTREAD: /* 一次性读取多个扇区 */
             if (!s->mult_sectors)
                 goto abort_cmd;
-	    ide_cmd_lba48_transform(s, lba48);
+            ide_cmd_lba48_transform(s, lba48);
             s->req_nb_sectors = s->mult_sectors;
             ide_sector_read(s);
             break;
         case WIN_MULTWRITE_EXT:
-	    lba48 = 1;
-        case WIN_MULTWRITE:
+            lba48 = 1;
+        case WIN_MULTWRITE: /* 一次性写入多个扇区 */
         case CFA_WRITE_MULTI_WO_ERASE:
             if (!s->mult_sectors)
                 goto abort_cmd;
-	    ide_cmd_lba48_transform(s, lba48);
+            ide_cmd_lba48_transform(s, lba48);
             s->error = 0;
             s->status = SEEK_STAT | READY_STAT;
             s->req_nb_sectors = s->mult_sectors;
@@ -2311,29 +2359,29 @@ static void ide_ioport_write(void *opaque, uint32_t addr, uint32_t val)
             ide_transfer_start(s, s->io_buffer, 512 * n, ide_sector_write);
             s->media_changed = 1;
             break;
-	case WIN_READDMA_EXT:
-	    lba48 = 1;
-        case WIN_READDMA:
+        case WIN_READDMA_EXT:
+            lba48 = 1;
+        case WIN_READDMA: /* 通过dma的方式来读 */
         case WIN_READDMA_ONCE:
             if (!s->bs)
                 goto abort_cmd;
-	    ide_cmd_lba48_transform(s, lba48);
+            ide_cmd_lba48_transform(s, lba48);
             ide_sector_read_dma(s);
             break;
-	case WIN_WRITEDMA_EXT:
-	    lba48 = 1;
-        case WIN_WRITEDMA:
+        case WIN_WRITEDMA_EXT:
+            lba48 = 1;
+        case WIN_WRITEDMA: /* 通过dma的方式来写 */
         case WIN_WRITEDMA_ONCE:
             if (!s->bs)
                 goto abort_cmd;
-	    ide_cmd_lba48_transform(s, lba48);
+            ide_cmd_lba48_transform(s, lba48);
             ide_sector_write_dma(s);
             s->media_changed = 1;
             break;
         case WIN_READ_NATIVE_MAX_EXT:
-	    lba48 = 1;
+            lba48 = 1;
         case WIN_READ_NATIVE_MAX:
-	    ide_cmd_lba48_transform(s, lba48);
+            ide_cmd_lba48_transform(s, lba48);
             ide_set_sector(s, s->nb_sectors - 1);
             s->status = READY_STAT | SEEK_STAT;
             ide_set_irq(s);
@@ -2367,37 +2415,37 @@ static void ide_ioport_write(void *opaque, uint32_t addr, uint32_t val)
                 ide_set_irq(s);
                 break;
             case 0x03: { /* set transfer mode */
-		uint8_t val = s->nsector & 0x07;
+                uint8_t val = s->nsector & 0x07;
 
-		switch (s->nsector >> 3) {
-		    case 0x00: /* pio default */
-		    case 0x01: /* pio mode */
-			put_le16(s->identify_data + 62,0x07);
-			put_le16(s->identify_data + 63,0x07);
-			put_le16(s->identify_data + 88,0x3f);
-			break;
+                switch (s->nsector >> 3) {
+                    case 0x00: /* pio default */
+                    case 0x01: /* pio mode */
+                        put_le16(s->identify_data + 62,0x07);
+                        put_le16(s->identify_data + 63,0x07);
+                        put_le16(s->identify_data + 88,0x3f);
+                        break;
                     case 0x02: /* sigle word dma mode*/
-			put_le16(s->identify_data + 62,0x07 | (1 << (val + 8)));
-			put_le16(s->identify_data + 63,0x07);
-			put_le16(s->identify_data + 88,0x3f);
-			break;
-		    case 0x04: /* mdma mode */
-			put_le16(s->identify_data + 62,0x07);
-			put_le16(s->identify_data + 63,0x07 | (1 << (val + 8)));
-			put_le16(s->identify_data + 88,0x3f);
-			break;
-		    case 0x08: /* udma mode */
-			put_le16(s->identify_data + 62,0x07);
-			put_le16(s->identify_data + 63,0x07);
-			put_le16(s->identify_data + 88,0x3f | (1 << (val + 8)));
-			break;
-		    default:
-			goto abort_cmd;
-		}
+                        put_le16(s->identify_data + 62,0x07 | (1 << (val + 8)));
+                        put_le16(s->identify_data + 63,0x07);
+                        put_le16(s->identify_data + 88,0x3f);
+                        break;
+                    case 0x04: /* mdma mode */
+                        put_le16(s->identify_data + 62,0x07);
+                        put_le16(s->identify_data + 63,0x07 | (1 << (val + 8)));
+                        put_le16(s->identify_data + 88,0x3f);
+                        break;
+                    case 0x08: /* udma mode */
+                        put_le16(s->identify_data + 62,0x07);
+                        put_le16(s->identify_data + 63,0x07);
+                        put_le16(s->identify_data + 88,0x3f | (1 << (val + 8)));
+                        break;
+                    default:
+                        goto abort_cmd;
+                }
                 s->status = READY_STAT | SEEK_STAT;
                 ide_set_irq(s);
                 break;
-	    }
+                }
             default:
                 goto abort_cmd;
             }
@@ -2406,7 +2454,7 @@ static void ide_ioport_write(void *opaque, uint32_t addr, uint32_t val)
         case WIN_FLUSH_CACHE_EXT:
             if (s->bs)
                 bdrv_flush(s->bs);
-	    s->status = READY_STAT | SEEK_STAT;
+            s->status = READY_STAT | SEEK_STAT;
             ide_set_irq(s);
             break;
         case WIN_STANDBY:
@@ -2451,7 +2499,7 @@ static void ide_ioport_write(void *opaque, uint32_t addr, uint32_t val)
             s->error = 0x01; /* Device 0 passed, Device 1 passed or not
                               * present. 
                               */
-            ide_set_irq(s);
+            ide_set_irq(s); /* 触发中断 */
             break;
         case WIN_SRST:
             if (!s->is_cdrom)
@@ -2536,11 +2584,11 @@ static void ide_ioport_write(void *opaque, uint32_t addr, uint32_t val)
             if (!s->is_cf)
                 goto abort_cmd;
             switch (s->feature) {
-            case 0x01:  /* sense temperature in device */
-                s->nsector = 0x50;      /* +20 C */
-                break;
-            default:
-                goto abort_cmd;
+                case 0x01:  /* sense temperature in device */
+                    s->nsector = 0x50;      /* +20 C */
+                    break;
+                default:
+                    goto abort_cmd;
             }
             s->status = READY_STAT | SEEK_STAT;
             ide_set_irq(s);
@@ -2632,6 +2680,7 @@ static uint32_t ide_ioport_read(void *opaque, uint32_t addr1)
     return ret;
 }
 
+/* 读取ide状态 */
 static uint32_t ide_status_read(void *opaque, uint32_t addr)
 {
     IDEState *ide_if = opaque;
@@ -2783,6 +2832,9 @@ static void ide_reset(IDEState *s)
     s->media_changed = 0;
 }
 
+/* ide的初始化 
+ * @param irq 分配的中断
+ */
 static void ide_init2(IDEState *ide_state,
                       BlockDriverState *hd0, BlockDriverState *hd1,
                       qemu_irq irq)
@@ -2794,7 +2846,7 @@ static void ide_init2(IDEState *ide_state,
 
     for(i = 0; i < 2; i++) {
         s = ide_state + i;
-        s->io_buffer = qemu_memalign(512, IDE_DMA_BUF_SECTORS*512 + 4);
+        s->io_buffer = qemu_memalign(512, IDE_DMA_BUF_SECTORS*512 + 4); /* 分配缓存空间 */
         if (i == 0)
             s->bs = hd0;
         else
@@ -2809,7 +2861,7 @@ static void ide_init2(IDEState *ide_state,
 
             if (bdrv_get_type_hint(s->bs) == BDRV_TYPE_CDROM) {
                 s->is_cdrom = 1;
-		bdrv_set_change_cb(s->bs, cdrom_change_cb, s);
+                bdrv_set_change_cb(s->bs, cdrom_change_cb, s);
             }
         }
         s->drive_serial = drive_serial++;
@@ -2986,6 +3038,7 @@ static void ide_dma_cancel(BMDMAState *bm)
     }
 }
 
+/* 操作dma的相关寄存器 */
 static void bmdma_cmd_writeb(void *opaque, uint32_t addr, uint32_t val)
 {
     BMDMAState *bm = opaque;
@@ -3015,7 +3068,7 @@ static uint32_t bmdma_readb(void *opaque, uint32_t addr)
 
     switch(addr & 3) {
     case 0:
-        val = bm->cmd;
+        val = bm->cmd; /* 读取命令 */
         break;
     case 1:
         pci_dev = bm->pci_dev;
@@ -3030,7 +3083,7 @@ static uint32_t bmdma_readb(void *opaque, uint32_t addr)
         break;
     case 3:
         pci_dev = bm->pci_dev;
-        if (pci_dev->type == IDE_TYPE_CMD646) {
+        if (pci_dev->type == IDE_TYPE_CMD646) { /* 只支持cmd646 */
             if (bm == &pci_dev->bmdma[0])
                 val = pci_dev->dev.config[UDIDETCR0];
             else
@@ -3252,6 +3305,7 @@ static int pci_ide_load(QEMUFile* f, void *opaque, int version_id)
 
 /* XXX: call it also when the MRDMODE is changed from the PCI config
    registers */
+/* 当MRDMODE变化的时候,调用此函数 */
 static void cmd646_update_irq(PCIIDEState *d)
 {
     int pci_level;
@@ -3276,6 +3330,7 @@ static void cmd646_set_irq(void *opaque, int channel, int level)
     cmd646_update_irq(d);
 }
 
+/* 重置 */
 static void cmd646_reset(void *opaque)
 {
     PCIIDEState *d = opaque;
@@ -3293,20 +3348,20 @@ void pci_cmd646_ide_init(PCIBus *bus, BlockDriverState **hd_table,
     uint8_t *pci_conf;
     int i;
     qemu_irq *irq;
-
+    /* 在pci总线上注册cmd646 ide控制器 */
     d = (PCIIDEState *)pci_register_device(bus, "CMD646 IDE",
                                            sizeof(PCIIDEState),
                                            -1,
                                            NULL, NULL);
     d->type = IDE_TYPE_CMD646;
-    pci_conf = d->dev.config;
+    pci_conf = d->dev.config; /* pci设备的配置空间 */
     pci_config_set_vendor_id(pci_conf, PCI_VENDOR_ID_CMD);
     pci_config_set_device_id(pci_conf, PCI_DEVICE_ID_CMD_646);
 
     pci_conf[0x08] = 0x07; // IDE controller revision
     pci_conf[0x09] = 0x8f;
 
-    pci_config_set_class(pci_conf, PCI_CLASS_STORAGE_IDE);
+    pci_config_set_class(pci_conf, PCI_CLASS_STORAGE_IDE); /* 设备类型为ide存储设备 */
     pci_conf[0x0e] = 0x00; // header_type
 
     pci_conf[0x51] = 0x04; // enable IDE0
@@ -3314,7 +3369,9 @@ void pci_cmd646_ide_init(PCIBus *bus, BlockDriverState **hd_table,
         /* XXX: if not enabled, really disable the seconday IDE controller */
         pci_conf[0x51] |= 0x08; /* enable IDE1 */
     }
-
+    /* 一旦操作系统给pci设备分配了地址,那么它包含的一系列寄存器就需要重新映射
+     * ide_map/bmdma_map做的就是这种事情
+     */
     pci_register_io_region((PCIDevice *)d, 0, 0x8,
                            PCI_ADDRESS_SPACE_IO, ide_map);
     pci_register_io_region((PCIDevice *)d, 1, 0x4,
@@ -3323,6 +3380,7 @@ void pci_cmd646_ide_init(PCIBus *bus, BlockDriverState **hd_table,
                            PCI_ADDRESS_SPACE_IO, ide_map);
     pci_register_io_region((PCIDevice *)d, 3, 0x4,
                            PCI_ADDRESS_SPACE_IO, ide_map);
+    /* 最低位为1表示是io */
     pci_register_io_region((PCIDevice *)d, 4, 0x10,
                            PCI_ADDRESS_SPACE_IO, bmdma_map);
 
@@ -3330,7 +3388,7 @@ void pci_cmd646_ide_init(PCIBus *bus, BlockDriverState **hd_table,
 
     for(i = 0; i < 4; i++)
         d->ide_if[i].pci_dev = (PCIDevice *)d;
-
+    /* 分配中断,中断处理函数为cmd646_set_irq,中断个数为2 */
     irq = qemu_allocate_irqs(cmd646_set_irq, d, 2);
     ide_init2(&d->ide_if[0], hd_table[0], hd_table[1], irq[0]);
     ide_init2(&d->ide_if[2], hd_table[2], hd_table[3], irq[1]);
@@ -3399,6 +3457,7 @@ void pci_piix3_ide_init(PCIBus *bus, BlockDriverState **hd_table, int devfn,
 
 /* hd_table must contain 4 block drivers */
 /* NOTE: for the PIIX4, the IRQs and IOports are hardcoded */
+/* 初始化ide */
 void pci_piix4_ide_init(PCIBus *bus, BlockDriverState **hd_table, int devfn,
                         qemu_irq *pic)
 {
@@ -3412,11 +3471,11 @@ void pci_piix4_ide_init(PCIBus *bus, BlockDriverState **hd_table, int devfn,
                                            NULL, NULL);
     d->type = IDE_TYPE_PIIX4;
 
-    pci_conf = d->dev.config;
+    pci_conf = d->dev.config; /* pci设备的配置空间 */
     pci_config_set_vendor_id(pci_conf, PCI_VENDOR_ID_INTEL);
     pci_config_set_device_id(pci_conf, PCI_DEVICE_ID_INTEL_82371AB);
     pci_conf[0x09] = 0x80; // legacy ATA mode
-    pci_config_set_class(pci_conf, PCI_CLASS_STORAGE_IDE);
+    pci_config_set_class(pci_conf, PCI_CLASS_STORAGE_IDE); /* 设备类型 */
     pci_conf[0x0e] = 0x00; // header_type
 
     qemu_register_reset(piix3_reset, d);

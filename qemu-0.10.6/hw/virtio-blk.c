@@ -294,6 +294,7 @@ static int virtio_blk_load(QEMUFile *f, void *opaque, int version_id)
     return 0;
 }
 
+/* 初始化虚拟块设备 */
 void *virtio_blk_init(PCIBus *bus, BlockDriverState *bs)
 {
     VirtIOBlock *s;

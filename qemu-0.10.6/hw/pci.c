@@ -273,7 +273,10 @@ PCIDevice *pci_register_device(PCIBus *bus, const char *name,
         config_read = pci_default_read_config;
     if (!config_write)
         config_write = pci_default_write_config;
-    pci_dev->config_read = config_read;
+    /* 注意这里的pci_default_read_config/pci_default_write_config
+     * 这两个回调函数很重要
+     */
+    pci_dev->config_read = config_read; 
     pci_dev->config_write = config_write;
     pci_dev->irq_index = pci_irq_index++; /* 记录下中断索引值 */
     bus->devices[devfn] = pci_dev;
@@ -323,6 +326,10 @@ int pci_unregister_device(PCIDevice *pci_dev)
     return 0;
 }
 
+/* 注册io region
+ * @parma region_num 
+ * @param map_func 映射函数
+ */
 void pci_register_io_region(PCIDevice *pci_dev, int region_num,
                             uint32_t size, int type,
                             PCIMapIORegionFunc *map_func)
@@ -330,7 +337,7 @@ void pci_register_io_region(PCIDevice *pci_dev, int region_num,
     PCIIORegion *r;
     uint32_t addr;
 
-    if ((unsigned int)region_num >= PCI_NUM_REGIONS)
+    if ((unsigned int)region_num >= PCI_NUM_REGIONS) /* 最多只有6个region */
         return;
 
     if (size & (size-1)) {
@@ -347,11 +354,14 @@ void pci_register_io_region(PCIDevice *pci_dev, int region_num,
     if (region_num == PCI_ROM_SLOT) {
         addr = 0x30;
     } else {
-        addr = 0x10 + region_num * 4;
+        addr = 0x10 + region_num * 4; /* 注意这个地址,恰好位于pci配置空间的基址寄存器处 */
     }
     *(uint32_t *)(pci_dev->config + addr) = cpu_to_le32(type);
 }
 
+/* 更新pic设备的内存映射
+ * 一旦操作系统给pci设备分配了基址,那么它下面的寄存器地址就要重新设置,方便操作系统访问
+ */
 static void pci_update_mappings(PCIDevice *d)
 {
     PCIIORegion *r;
@@ -364,10 +374,10 @@ static void pci_update_mappings(PCIDevice *d)
         if (i == PCI_ROM_SLOT) {
             config_ofs = 0x30;
         } else {
-            config_ofs = 0x10 + i * 4;
+            config_ofs = 0x10 + i * 4; /* 基址寄存器的相对偏移 */
         }
         if (r->size != 0) {
-            if (r->type & PCI_ADDRESS_SPACE_IO) {
+            if (r->type & PCI_ADDRESS_SPACE_IO) { /* io地址空间 */
                 if (cmd & PCI_COMMAND_IO) {
                     new_addr = le32_to_cpu(*(uint32_t *)(d->config +
                                                          config_ofs));
@@ -382,7 +392,7 @@ static void pci_update_mappings(PCIDevice *d)
                     new_addr = -1;
                 }
             } else {
-                if (cmd & PCI_COMMAND_MEMORY) {
+                if (cmd & PCI_COMMAND_MEMORY) { /* 内存地址空间 */
                     new_addr = le32_to_cpu(*(uint32_t *)(d->config +
                                                          config_ofs));
                     /* the ROM slot has a specific enable bit */
@@ -404,13 +414,14 @@ static void pci_update_mappings(PCIDevice *d)
                 }
             }
             /* now do the real mapping */
-            if (new_addr != r->addr) {
+            if (new_addr != r->addr) { /* 地址发生了变更 */
                 if (r->addr != -1) {
                     if (r->type & PCI_ADDRESS_SPACE_IO) {
                         int class;
                         /* NOTE: specific hack for IDE in PC case:
                            only one byte must be mapped. */
                         class = d->config[0x0a] | (d->config[0x0b] << 8);
+                        /* 首先取消原来的映射 */
                         if (class == 0x0101 && r->size == 4) {
                             isa_unassign_ioport(r->addr + 2, 1);
                         } else {
@@ -424,6 +435,7 @@ static void pci_update_mappings(PCIDevice *d)
                     }
                 }
                 r->addr = new_addr;
+                /* 然后再映射 */
                 if (r->addr != -1) {
                     r->map_func(d, i, r->addr, r->size, r->type);
                 }
@@ -474,7 +486,7 @@ void pci_default_write_config(PCIDevice *d,
         }else{
             reg = (address - 0x10) >> 2;
         }
-        r = &d->io_regions[reg];
+        r = &d->io_regions[reg]; /* 选择pci设备的一个基址寄存器 */
         if (r->size == 0)
             goto default_config;
         /* compute the stored value */
@@ -485,6 +497,7 @@ void pci_default_write_config(PCIDevice *d,
             val &= ~(r->size - 1);
             val |= r->type;
         }
+        /* 更新基址寄存器的值,注意,最低的1个bit不变(最低的1bit用于表示它到底是内存还是io) */
         *(uint32_t *)(d->config + address) = cpu_to_le32(val);
         pci_update_mappings(d);
         return;

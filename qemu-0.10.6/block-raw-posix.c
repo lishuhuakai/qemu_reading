@@ -194,7 +194,7 @@ static int raw_pread_aligned(BlockDriverState *bs, int64_t offset,
     BDRVRawState *s = bs->opaque;
     int ret;
 
-    ret = fd_open(bs);
+    ret = fd_open(bs); /* 打开文件 */
     if (ret < 0)
         return ret;
 
@@ -210,7 +210,7 @@ static int raw_pread_aligned(BlockDriverState *bs, int64_t offset,
     }
     s->lseek_err_cnt=0;
 
-    ret = read(s->fd, buf, count);
+    ret = read(s->fd, buf, count); /* 读取数据到buf之中 */
     if (ret == count)
         goto label__raw_read__success;
 
@@ -341,7 +341,7 @@ static int raw_pread(BlockDriverState *bs, int64_t offset,
                 size = ret;
                 if (size > count)
                     size = count;
-
+                /* 读取的数据存入buf之中 */
                 memcpy(buf, s->aligned_buf, size);
 
                 buf += size;
@@ -496,6 +496,7 @@ static void posix_aio_read(void *opaque)
                 /* remove the request */
                 *pacb = acb->next;
                 /* call the callback */
+                /* 调用回调函数 */
                 acb->common.cb(acb->common.opaque, ret);
                 qemu_aio_release(acb);
                 break;
@@ -526,6 +527,7 @@ static void aio_signal_handler(int signum)
     qemu_service_io();
 }
 
+/* 初始化aio模块 */
 static int posix_aio_init(void)
 {
     struct sigaction act;
@@ -540,7 +542,7 @@ static int posix_aio_init(void)
 
     sigfillset(&act.sa_mask);
     act.sa_flags = 0; /* do not restart syscalls to interrupt select() */
-    act.sa_handler = aio_signal_handler;
+    act.sa_handler = aio_signal_handler; /* 注册信号处理函数 */
     sigaction(SIGUSR2, &act, NULL);
 
     s->first_aio = NULL;
@@ -619,6 +621,13 @@ static void raw_aio_remove(RawAIOCB *acb)
     }
 }
 
+/* 异步读
+ * @param sector_num 扇区号
+ * @param buf 缓冲区首地址
+ * @param nb_sectors 要读的扇区个数
+ * @param cb 读完成之后要执行的回调函数
+ * @param opaque 要传递给cb的参数
+ */
 static BlockDriverAIOCB *raw_aio_read(BlockDriverState *bs,
         int64_t sector_num, uint8_t *buf, int nb_sectors,
         BlockDriverCompletionFunc *cb, void *opaque)
@@ -635,7 +644,8 @@ static BlockDriverAIOCB *raw_aio_read(BlockDriverState *bs,
         QEMUBH *bh;
         acb = qemu_aio_get(bs, cb, opaque);
         acb->ret = raw_pread(bs, 512 * sector_num, buf, 512 * nb_sectors);
-        bh = qemu_bh_new(raw_aio_em_cb, acb);
+        /* 读完之后,调用raw_aio_em_cb */
+        bh = qemu_bh_new(raw_aio_em_cb, acb); /* 构建一个bh */
         qemu_bh_schedule(bh);
         return &acb->common;
     }

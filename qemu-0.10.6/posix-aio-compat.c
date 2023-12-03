@@ -106,7 +106,7 @@ static void *aio_thread(void *unused)
 
         if (TAILQ_EMPTY(&request_list))
             break;
-
+        /* 获得一个任务 */
         aiocb = TAILQ_FIRST(&request_list);
         TAILQ_REMOVE(&request_list, aiocb, node);
 
@@ -120,6 +120,7 @@ static void *aio_thread(void *unused)
             ssize_t len;
 
             if (aiocb->is_write)
+                /* 这个是raw_pwrite吗? */
                 len = pwrite(aiocb->aio_fildes,
                              (const char *)aiocb->aio_buf + offset,
                              aiocb->aio_nbytes - offset,
@@ -145,7 +146,7 @@ static void *aio_thread(void *unused)
         aiocb->ret = offset;
         idle_threads++;
         mutex_unlock(&lock);
-
+        
         if (kill(pid, aiocb->ev_signo)) die("kill failed");
     }
 
@@ -178,6 +179,7 @@ int qemu_paio_init(struct qemu_paioinit *aioinit)
     return 0;
 }
 
+/* 这玩意是干嘛?是提交吗? */
 static int qemu_paio_submit(struct qemu_paiocb *aiocb, int is_write)
 {
     aiocb->is_write = is_write;
@@ -185,10 +187,10 @@ static int qemu_paio_submit(struct qemu_paiocb *aiocb, int is_write)
     aiocb->active = 0;
     mutex_lock(&lock);
     if (idle_threads == 0 && cur_threads < max_threads)
-        spawn_thread();
-    TAILQ_INSERT_TAIL(&request_list, aiocb, node);
+        spawn_thread(); /* 拉起线程 */
+    TAILQ_INSERT_TAIL(&request_list, aiocb, node); /* 将任务提交给工作线程 */
     mutex_unlock(&lock);
-    cond_signal(&cond);
+    cond_signal(&cond); /* 提醒工作线程 */
 
     return 0;
 }

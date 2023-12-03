@@ -191,6 +191,7 @@ int cpu_load(QEMUFile *f, void *opaque, int version_id);
 /* Force QEMU to stop what it's doing and service IO */
 void qemu_service_io(void);
 
+/* io向量 */
 typedef struct QEMUIOVector {
     struct iovec *iov;
     int niov;

@@ -2190,10 +2190,11 @@ static int drive_get_free_idx(void)
     return -1;
 }
 
+/* 添加设备 */
 int drive_add(const char *file, const char *fmt, ...)
 {
     va_list ap;
-    int index = drive_opt_get_free_idx();
+    int index = drive_opt_get_free_idx(); /* 获得一个空闲的索引值 */
 
     if (nb_drives_opt >= MAX_DRIVES || index == -1) {
         fprintf(stderr, "qemu: too many drives\n");
@@ -2295,7 +2296,7 @@ int drive_init(struct drive_opt *arg, int snapshot, void *opaque)
     char serial[21];
     const char *mediastr = "";
     BlockInterfaceType type;
-    enum { MEDIA_DISK, MEDIA_CDROM } media;
+    enum { MEDIA_DISK, MEDIA_CDROM } media; /* 块设备介质 */
     int bus_id, unit_id;
     int cyls, heads, secs, translation;
     BlockDriverState *bdrv;
@@ -2332,7 +2333,7 @@ int drive_init(struct drive_opt *arg, int snapshot, void *opaque)
         max_devs = MAX_SCSI_DEVS;
         pstrcpy(devname, sizeof(devname), "scsi");
     } else {
-        type = IF_IDE;
+        type = IF_IDE; /* ide类型 */
         max_devs = MAX_IDE_DEVS;
         pstrcpy(devname, sizeof(devname), "ide");
     }
@@ -2342,39 +2343,39 @@ int drive_init(struct drive_opt *arg, int snapshot, void *opaque)
 
     if (get_param_value(buf, sizeof(buf), "bus", str)) {
         bus_id = strtol(buf, NULL, 0);
-	if (bus_id < 0) {
-	    fprintf(stderr, "qemu: '%s' invalid bus id\n", str);
-	    return -1;
-	}
+        if (bus_id < 0) {
+            fprintf(stderr, "qemu: '%s' invalid bus id\n", str);
+            return -1;
+        }
     }
 
     if (get_param_value(buf, sizeof(buf), "unit", str)) {
         unit_id = strtol(buf, NULL, 0);
-	if (unit_id < 0) {
-	    fprintf(stderr, "qemu: '%s' invalid unit id\n", str);
-	    return -1;
-	}
+        if (unit_id < 0) {
+            fprintf(stderr, "qemu: '%s' invalid unit id\n", str);
+            return -1;
+        }
     }
-
+    /* 块设备类型 */
     if (get_param_value(buf, sizeof(buf), "if", str)) {
         pstrcpy(devname, sizeof(devname), buf);
         if (!strcmp(buf, "ide")) {
-	    type = IF_IDE;
+            type = IF_IDE;
             max_devs = MAX_IDE_DEVS;
         } else if (!strcmp(buf, "scsi")) {
-	    type = IF_SCSI;
+            type = IF_SCSI;
             max_devs = MAX_SCSI_DEVS;
         } else if (!strcmp(buf, "floppy")) {
-	    type = IF_FLOPPY;
+            type = IF_FLOPPY;
             max_devs = 0;
         } else if (!strcmp(buf, "pflash")) {
-	    type = IF_PFLASH;
+            type = IF_PFLASH;
             max_devs = 0;
-	} else if (!strcmp(buf, "mtd")) {
-	    type = IF_MTD;
+        } else if (!strcmp(buf, "mtd")) {
+            type = IF_MTD;
             max_devs = 0;
-	} else if (!strcmp(buf, "sd")) {
-	    type = IF_SD;
+        } else if (!strcmp(buf, "sd")) {
+            type = IF_SD;
             max_devs = 0;
         } else if (!strcmp(buf, "virtio")) {
             type = IF_VIRTIO;
@@ -2382,15 +2383,15 @@ int drive_init(struct drive_opt *arg, int snapshot, void *opaque)
         } else {
             fprintf(stderr, "qemu: '%s' unsupported bus type '%s'\n", str, buf);
             return -1;
-	}
+        }
     }
 
     if (get_param_value(buf, sizeof(buf), "index", str)) {
-        index = strtol(buf, NULL, 0);
-	if (index < 0) {
-	    fprintf(stderr, "qemu: '%s' invalid index\n", str);
-	    return -1;
-	}
+        index = strtol(buf, NULL, 0); /* index是干嘛的? */
+        if (index < 0) {
+            fprintf(stderr, "qemu: '%s' invalid index\n", str);
+            return -1;
+        }
     }
 
     if (get_param_value(buf, sizeof(buf), "cyls", str)) {
@@ -2408,16 +2409,16 @@ int drive_init(struct drive_opt *arg, int snapshot, void *opaque)
     if (cyls || heads || secs) {
         if (cyls < 1 || cyls > 16383) {
             fprintf(stderr, "qemu: '%s' invalid physical cyls number\n", str);
-	    return -1;
-	}
+            return -1;
+        }
         if (heads < 1 || heads > 16) {
             fprintf(stderr, "qemu: '%s' invalid physical heads number\n", str);
-	    return -1;
-	}
+            return -1;
+        }
         if (secs < 1 || secs > 63) {
             fprintf(stderr, "qemu: '%s' invalid physical secs number\n", str);
-	    return -1;
-	}
+            return -1;
+        }
     }
 
     if (get_param_value(buf, sizeof(buf), "trans", str)) {
@@ -2433,26 +2434,26 @@ int drive_init(struct drive_opt *arg, int snapshot, void *opaque)
             translation = BIOS_ATA_TRANSLATION_LBA;
         else if (!strcmp(buf, "auto"))
             translation = BIOS_ATA_TRANSLATION_AUTO;
-	else {
+        else {
             fprintf(stderr, "qemu: '%s' invalid translation type\n", str);
-	    return -1;
-	}
+            return -1;
+        }
     }
 
     if (get_param_value(buf, sizeof(buf), "media", str)) {
         if (!strcmp(buf, "disk")) {
-	    media = MEDIA_DISK;
-	} else if (!strcmp(buf, "cdrom")) {
+            media = MEDIA_DISK; /* 介质 */
+        } else if (!strcmp(buf, "cdrom")) {
             if (cyls || secs || heads) {
-                fprintf(stderr,
-                        "qemu: '%s' invalid physical CHS format\n", str);
-	        return -1;
+                    fprintf(stderr,
+                            "qemu: '%s' invalid physical CHS format\n", str);
+                return -1;
             }
-	    media = MEDIA_CDROM;
-	} else {
-	    fprintf(stderr, "qemu: '%s' invalid media\n", str);
-	    return -1;
-	}
+            media = MEDIA_CDROM;
+        } else {
+            fprintf(stderr, "qemu: '%s' invalid media\n", str);
+            return -1;
+        }
     }
 
     if (get_param_value(buf, sizeof(buf), "snapshot", str)) {
@@ -2460,10 +2461,10 @@ int drive_init(struct drive_opt *arg, int snapshot, void *opaque)
 	    snapshot = 1;
         else if (!strcmp(buf, "off"))
 	    snapshot = 0;
-	else {
-	    fprintf(stderr, "qemu: '%s' invalid snapshot option\n", str);
-	    return -1;
-	}
+        else {
+            fprintf(stderr, "qemu: '%s' invalid snapshot option\n", str);
+            return -1;
+        }
     }
 
     if (get_param_value(buf, sizeof(buf), "cache", str)) {
@@ -2484,7 +2485,7 @@ int drive_init(struct drive_opt *arg, int snapshot, void *opaque)
             fprintf(stderr, "qemu: Supported formats:");
             bdrv_iterate_format(bdrv_format_print, NULL);
             fprintf(stderr, "\n");
-	    return -1;
+            return -1;
         }
         drv = bdrv_find_format(buf);
         if (!drv) {
@@ -2582,7 +2583,7 @@ int drive_init(struct drive_opt *arg, int snapshot, void *opaque)
     bdrv = bdrv_new(buf);
     drives_table_idx = drive_get_free_idx();
     drives_table[drives_table_idx].bdrv = bdrv;
-    drives_table[drives_table_idx].type = type;
+    drives_table[drives_table_idx].type = type; /* 记录下块设备类型 */
     drives_table[drives_table_idx].bus = bus_id;
     drives_table[drives_table_idx].unit = unit_id;
     drives_table[drives_table_idx].onerror = onerror;
@@ -2594,16 +2595,16 @@ int drive_init(struct drive_opt *arg, int snapshot, void *opaque)
     case IF_IDE:
     case IF_SCSI:
         switch(media) {
-	case MEDIA_DISK:
-            if (cyls != 0) {
-                bdrv_set_geometry_hint(bdrv, cyls, heads, secs);
-                bdrv_set_translation_hint(bdrv, translation);
-            }
-	    break;
-	case MEDIA_CDROM:
-            bdrv_set_type_hint(bdrv, BDRV_TYPE_CDROM);
-	    break;
-	}
+        case MEDIA_DISK:
+                if (cyls != 0) {
+                    bdrv_set_geometry_hint(bdrv, cyls, heads, secs);
+                    bdrv_set_translation_hint(bdrv, translation);
+                }
+            break;
+        case MEDIA_CDROM:
+                bdrv_set_type_hint(bdrv, BDRV_TYPE_CDROM);
+            break;
+        }
         break;
     case IF_SD:
         /* FIXME: This isn't really a floppy, but it's a reasonable
@@ -3341,16 +3342,20 @@ void qemu_service_io(void)
 /* bottom halves (can be seen as timers which expire ASAP) */
 
 struct QEMUBH {
-    QEMUBHFunc *cb;
-    void *opaque;
-    int scheduled;
+    QEMUBHFunc *cb; /* 回调函数 */
+    void *opaque; /* 传递给回调函数的参数 */
+    int scheduled; /* 使能bh,是否被调度 */
     int idle;
-    int deleted;
+    int deleted; /* 标记是否将bh删除 */
     QEMUBH *next;
 };
-
+/* 链表 */
 static QEMUBH *first_bh = NULL;
 
+/* 分配一个bh 
+ * @param cb 回调函数
+ * @param opaque 传递给回调函数的参数
+ */
 QEMUBH *qemu_bh_new(QEMUBHFunc *cb, void *opaque)
 {
     QEMUBH *bh;
@@ -3362,6 +3367,7 @@ QEMUBH *qemu_bh_new(QEMUBHFunc *cb, void *opaque)
     return bh;
 }
 
+/* 调度bh */
 int qemu_bh_poll(void)
 {
     QEMUBH *bh, **bhp;
@@ -3374,7 +3380,7 @@ int qemu_bh_poll(void)
             if (!bh->idle)
                 ret = 1;
             bh->idle = 0;
-            bh->cb(bh->opaque);
+            bh->cb(bh->opaque); /* 调用回调函数 */
         }
     }
 
@@ -3384,7 +3390,7 @@ int qemu_bh_poll(void)
         bh = *bhp;
         if (bh->deleted) {
             *bhp = bh->next;
-            qemu_free(bh);
+            qemu_free(bh); /* 移除bh */
         } else
             bhp = &bh->next;
     }
@@ -3405,7 +3411,7 @@ void qemu_bh_schedule(QEMUBH *bh)
     CPUState *env = cpu_single_env;
     if (bh->scheduled)
         return;
-    bh->scheduled = 1;
+    bh->scheduled = 1; /* 将scheduled标记设置为1,表示要调度bh */
     bh->idle = 0;
     /* stop the currently executing CPU to execute the BH ASAP */
     if (env) {
@@ -3413,11 +3419,13 @@ void qemu_bh_schedule(QEMUBH *bh)
     }
 }
 
+/* 停止调度bh */
 void qemu_bh_cancel(QEMUBH *bh)
 {
     bh->scheduled = 0;
 }
 
+/* 删除bh */
 void qemu_bh_delete(QEMUBH *bh)
 {
     bh->scheduled = 0;
@@ -4724,7 +4732,7 @@ int main(int argc, char **argv, char **envp)
             break;
         r = argv[optind];
         if (r[0] != '-') {
-	    hda_index = drive_add(argv[optind++], HD_ALIAS, 0);
+            hda_index = drive_add(argv[optind++], HD_ALIAS, 0);
         } else {
             const QEMUOption *popt;
 
@@ -5505,7 +5513,7 @@ int main(int argc, char **argv, char **envp)
     /* init the dynamic translator */
     cpu_exec_init_all(tb_size * 1024 * 1024);
 
-    bdrv_init();
+    bdrv_init(); /* 注册块设备 */
     dma_helper_init();
 
     /* we always create the cdrom drive, even if no disk is there */
@@ -5527,7 +5535,7 @@ int main(int argc, char **argv, char **envp)
 
     for(i = 0; i < nb_drives_opt; i++)
         if (drive_init(&drives_opt[i], snapshot, machine) == -1)
-	    exit(1);
+            exit(1);
 
     register_savevm("timer", 0, 2, timer_save, timer_load, NULL);
     register_savevm_live("ram", 0, 3, ram_save_live, NULL, ram_load, NULL);

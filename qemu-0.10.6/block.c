@@ -65,6 +65,7 @@ BlockDriverState *bdrv_first;
 
 static BlockDriver *first_drv;
 
+/* 是否为绝对路径 */
 int path_is_absolute(const char *path)
 {
     const char *p;
@@ -129,16 +130,16 @@ void path_combine(char *dest, int dest_size,
     }
 }
 
-
+/* 注册块设备驱动 */
 static void bdrv_register(BlockDriver *bdrv)
 {
-    if (!bdrv->bdrv_aio_read) {
+    if (!bdrv->bdrv_aio_read) { /* 异步io模拟层 */
         /* add AIO emulation layer */
         bdrv->bdrv_aio_read = bdrv_aio_read_em;
         bdrv->bdrv_aio_write = bdrv_aio_write_em;
         bdrv->bdrv_aio_cancel = bdrv_aio_cancel_em;
         bdrv->aiocb_size = sizeof(BlockDriverAIOCBSync);
-    } else if (!bdrv->bdrv_read && !bdrv->bdrv_pread) {
+    } else if (!bdrv->bdrv_read && !bdrv->bdrv_pread) { /* 同步io模拟层 */
         /* add synchronous IO emulation layer */
         bdrv->bdrv_read = bdrv_read_em;
         bdrv->bdrv_write = bdrv_write_em;
@@ -324,11 +325,16 @@ int bdrv_file_open(BlockDriverState **pbs, const char *filename, int flags)
     return 0;
 }
 
+/* 打开块设备 */
 int bdrv_open(BlockDriverState *bs, const char *filename, int flags)
 {
     return bdrv_open2(bs, filename, flags, NULL);
 }
 
+/* 打开块设备
+ * @param filename 文件名
+ * @param drv 块设备驱动
+ */
 int bdrv_open2(BlockDriverState *bs, const char *filename, int flags,
                BlockDriver *drv)
 {
@@ -408,7 +414,7 @@ int bdrv_open2(BlockDriverState *bs, const char *filename, int flags,
         qemu_free(bs->opaque);
         bs->opaque = NULL;
         bs->drv = NULL;
-    unlink_and_fail:
+unlink_and_fail:
         if (bs->is_temporary)
             unlink(filename);
         return ret;
@@ -557,17 +563,21 @@ static int bdrv_check_request(BlockDriverState *bs, int64_t sector_num,
 }
 
 /* return < 0 if error. See bdrv_write() for the return codes */
+/* 块设备读
+ * @param sector_num 扇区号
+ * @param nb_sectors 要读取的扇区个数
+ */
 int bdrv_read(BlockDriverState *bs, int64_t sector_num,
               uint8_t *buf, int nb_sectors)
 {
-    BlockDriver *drv = bs->drv;
+    BlockDriver *drv = bs->drv; /* 块设备读需要驱动 */
 
     if (!drv)
         return -ENOMEDIUM;
     if (bdrv_check_request(bs, sector_num, nb_sectors))
         return -EIO;
 
-    if (drv->bdrv_pread) {
+    if (drv->bdrv_pread) { /* 提前读吗? */
         int ret, len;
         len = nb_sectors * 512;
         ret = drv->bdrv_pread(bs, sector_num * 512, buf, len);
@@ -576,10 +586,10 @@ int bdrv_read(BlockDriverState *bs, int64_t sector_num,
         else if (ret != len)
             return -EINVAL;
         else {
-	    bs->rd_bytes += (unsigned) len;
-	    bs->rd_ops ++;
+            bs->rd_bytes += (unsigned) len;
+            bs->rd_ops++;
             return 0;
-	}
+        }
     } else {
         return drv->bdrv_read(bs, sector_num, buf, nb_sectors);
     }
@@ -602,7 +612,7 @@ int bdrv_write(BlockDriverState *bs, int64_t sector_num,
     if (bdrv_check_request(bs, sector_num, nb_sectors))
         return -EIO;
 
-    if (drv->bdrv_pwrite) {
+    if (drv->bdrv_pwrite) { /* 存在写回调函数 */
         int ret, len, count = 0;
         len = nb_sectors * 512;
         do {
@@ -1361,9 +1371,9 @@ static void bdrv_aio_rw_vector_cb(void *opaque, int ret)
 }
 
 static BlockDriverAIOCB *bdrv_aio_rw_vector(BlockDriverState *bs,
-                                            int64_t sector_num,
+        int64_t sector_num, /* 扇区号 */
                                             QEMUIOVector *iov,
-                                            int nb_sectors,
+                                            int nb_sectors, /* 扇区个数 */
                                             BlockDriverCompletionFunc *cb,
                                             void *opaque,
                                             int is_write)
@@ -1375,7 +1385,7 @@ static BlockDriverAIOCB *bdrv_aio_rw_vector(BlockDriverState *bs,
     s->iov = iov;
     s->bounce = qemu_memalign(512, nb_sectors * 512);
     s->is_write = is_write;
-    if (is_write) {
+    if (is_write) { /* 异步写,操作完成之后,调用bdrv_aio_rw_vector_cb */
         qemu_iovec_to_buffer(s->iov, s->bounce);
         s->aiocb = bdrv_aio_write(bs, sector_num, s->bounce, nb_sectors,
                                   bdrv_aio_rw_vector_cb, s);
@@ -1391,6 +1401,9 @@ static BlockDriverAIOCB *bdrv_aio_rw_vector(BlockDriverState *bs,
     return &s->common;
 }
 
+/* 异步读
+ * @param iov io数组
+ */
 BlockDriverAIOCB *bdrv_aio_readv(BlockDriverState *bs, int64_t sector_num,
                                  QEMUIOVector *iov, int nb_sectors,
                                  BlockDriverCompletionFunc *cb, void *opaque)
@@ -1413,6 +1426,7 @@ BlockDriverAIOCB *bdrv_aio_writev(BlockDriverState *bs, int64_t sector_num,
                               cb, opaque, 1);
 }
 
+/* 块设备的异步读取 */
 BlockDriverAIOCB *bdrv_aio_read(BlockDriverState *bs, int64_t sector_num,
                                 uint8_t *buf, int nb_sectors,
                                 BlockDriverCompletionFunc *cb, void *opaque)
@@ -1428,19 +1442,20 @@ BlockDriverAIOCB *bdrv_aio_read(BlockDriverState *bs, int64_t sector_num,
     ret = drv->bdrv_aio_read(bs, sector_num, buf, nb_sectors, cb, opaque);
 
     if (ret) {
-	/* Update stats even though technically transfer has not happened. */
-	bs->rd_bytes += (unsigned) nb_sectors * SECTOR_SIZE;
-	bs->rd_ops ++;
+        /* Update stats even though technically transfer has not happened. */
+        bs->rd_bytes += (unsigned) nb_sectors * SECTOR_SIZE;
+        bs->rd_ops ++;
     }
 
     return ret;
 }
 
+/* 异步写 */
 BlockDriverAIOCB *bdrv_aio_write(BlockDriverState *bs, int64_t sector_num,
                                  const uint8_t *buf, int nb_sectors,
                                  BlockDriverCompletionFunc *cb, void *opaque)
 {
-    BlockDriver *drv = bs->drv;
+    BlockDriver *drv = bs->drv; /* 获得块设备驱动 */
     BlockDriverAIOCB *ret;
 
     if (!drv)
@@ -1449,13 +1464,13 @@ BlockDriverAIOCB *bdrv_aio_write(BlockDriverState *bs, int64_t sector_num,
         return NULL;
     if (bdrv_check_request(bs, sector_num, nb_sectors))
         return NULL;
-
+    /* 我们假定drv为bdrv_raw,那么bdrw_aio_write就是raw_aio_write */
     ret = drv->bdrv_aio_write(bs, sector_num, buf, nb_sectors, cb, opaque);
 
     if (ret) {
-	/* Update stats even though technically transfer has not happened. */
-	bs->wr_bytes += (unsigned) nb_sectors * SECTOR_SIZE;
-	bs->wr_ops ++;
+        /* Update stats even though technically transfer has not happened. */
+        bs->wr_bytes += (unsigned) nb_sectors * SECTOR_SIZE;
+        bs->wr_ops ++;
     }
 
     return ret;
@@ -1468,7 +1483,9 @@ void bdrv_aio_cancel(BlockDriverAIOCB *acb)
 
 
 /**************************************************************/
-/* async block device emulation */
+/* async block device emulation
+ * 异步块设备模拟
+ */
 
 static void bdrv_aio_bh_cb(void *opaque)
 {
@@ -1477,22 +1494,29 @@ static void bdrv_aio_bh_cb(void *opaque)
     qemu_aio_release(acb);
 }
 
+/* 异步读 
+ * @param nb_sectors 要读取的扇区的个数
+ * @param sector_num 扇区号
+ */
 static BlockDriverAIOCB *bdrv_aio_read_em(BlockDriverState *bs,
         int64_t sector_num, uint8_t *buf, int nb_sectors,
         BlockDriverCompletionFunc *cb, void *opaque)
 {
     BlockDriverAIOCBSync *acb;
     int ret;
-
+    /* 分配一个句柄 */
     acb = qemu_aio_get(bs, cb, opaque);
     if (!acb->bh)
-        acb->bh = qemu_bh_new(bdrv_aio_bh_cb, acb);
+        acb->bh = qemu_bh_new(bdrv_aio_bh_cb, acb); /* 分配一个bh */
     ret = bdrv_read(bs, sector_num, buf, nb_sectors);
     acb->ret = ret;
-    qemu_bh_schedule(acb->bh);
+    qemu_bh_schedule(acb->bh); /* 将bh标记为可调度 */
     return &acb->common;
 }
 
+/* 异步写
+ * @param cb 回调函数
+ */
 static BlockDriverAIOCB *bdrv_aio_write_em(BlockDriverState *bs,
         int64_t sector_num, const uint8_t *buf, int nb_sectors,
         BlockDriverCompletionFunc *cb, void *opaque)
@@ -1502,10 +1526,10 @@ static BlockDriverAIOCB *bdrv_aio_write_em(BlockDriverState *bs,
 
     acb = qemu_aio_get(bs, cb, opaque);
     if (!acb->bh)
-        acb->bh = qemu_bh_new(bdrv_aio_bh_cb, acb);
+        acb->bh = qemu_bh_new(bdrv_aio_bh_cb, acb); /* 分配一个bh */
     ret = bdrv_write(bs, sector_num, buf, nb_sectors);
     acb->ret = ret;
-    qemu_bh_schedule(acb->bh);
+    qemu_bh_schedule(acb->bh); /* 调度bh */
     return &acb->common;
 }
 
@@ -1517,7 +1541,9 @@ static void bdrv_aio_cancel_em(BlockDriverAIOCB *blockacb)
 }
 
 /**************************************************************/
-/* sync block device emulation */
+/* sync block device emulation
+ * 同步块设备模拟
+ */
 
 static void bdrv_rw_em_cb(void *opaque, int ret)
 {
@@ -1562,6 +1588,7 @@ static int bdrv_write_em(BlockDriverState *bs, int64_t sector_num,
     return async_ret;
 }
 
+/* 注意这个函数,这里注册了一大堆的块设备 */
 void bdrv_init(void)
 {
     aio_pool_init(&vectored_aio_pool, sizeof(VectorTranslationAIOCB),
@@ -1592,6 +1619,7 @@ void aio_pool_init(AIOPool *pool, int aiocb_size,
     pool->free_aiocb = NULL;
 }
 
+/* 从aio池中分配一个BlockDriverAIOCB */
 void *qemu_aio_get_pool(AIOPool *pool, BlockDriverState *bs,
                         BlockDriverCompletionFunc *cb, void *opaque)
 {

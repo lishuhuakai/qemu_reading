@@ -1057,16 +1057,17 @@ vga_bios_error:
 
     for(i = 0; i < MAX_IDE_BUS * MAX_IDE_DEVS; i++) {
         index = drive_get_index(IF_IDE, i / MAX_IDE_DEVS, i % MAX_IDE_DEVS);
-	if (index != -1)
-	    hd[i] = drives_table[index].bdrv;
-	else
-	    hd[i] = NULL;
+        if (index != -1)
+            hd[i] = drives_table[index].bdrv;
+        else
+            hd[i] = NULL;
     }
 
     if (pci_enabled) {
         pci_piix3_ide_init(pci_bus, hd, piix3_devfn + 1, i8259);
     } else {
         for(i = 0; i < MAX_IDE_BUS; i++) {
+            /* 初始化ide */
             isa_ide_init(ide_iobase[i], ide_iobase2[i], i8259[ide_irq[i]],
 	                 hd[MAX_IDE_DEVS * i], hd[MAX_IDE_DEVS * i + 1]);
         }
@@ -1109,20 +1110,20 @@ vga_bios_error:
     }
 
     if (pci_enabled) {
-	int max_bus;
+        int max_bus;
         int bus, unit;
         void *scsi;
 
         max_bus = drive_get_max_bus(IF_SCSI);
 
-	for (bus = 0; bus <= max_bus; bus++) {
+        for (bus = 0; bus <= max_bus; bus++) {
             scsi = lsi_scsi_init(pci_bus, -1);
             for (unit = 0; unit < LSI_MAX_DEVS; unit++) {
-	        index = drive_get_index(IF_SCSI, bus, unit);
-		if (index == -1)
-		    continue;
-		lsi_scsi_attach(scsi, drives_table[index].bdrv, unit);
-	    }
+                index = drive_get_index(IF_SCSI, bus, unit);
+                if (index == -1)
+                    continue;
+                lsi_scsi_attach(scsi, drives_table[index].bdrv, unit);
+            }
         }
     }
 

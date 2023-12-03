@@ -100,6 +100,7 @@ struct BlockDriver {
     struct BlockDriver *next;
 };
 
+/* BlockDriverStata用于描述一个块设备 */
 struct BlockDriverState {
     int64_t total_sectors; /* if we are reading a disk image, give its
                               size in sectors */
@@ -112,7 +113,7 @@ struct BlockDriverState {
     /* event callback when inserting/removing */
     void (*change_cb)(void *opaque);
     void *change_opaque;
-
+    /* 块设备驱动,块设备的读写都要通过块设备驱动 */
     BlockDriver *drv; /* NULL means no media */
     void *opaque;
 

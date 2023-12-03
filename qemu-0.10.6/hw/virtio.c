@@ -832,7 +832,7 @@ VirtIODevice *virtio_init_pci(PCIBus *bus, const char *name,
     PCIDevice *pci_dev;
     uint8_t *config;
     uint32_t size;
-
+    /* 注册pci设备 */
     pci_dev = pci_register_device(bus, name, struct_size,
                                   -1, NULL, NULL);
     if (!pci_dev)

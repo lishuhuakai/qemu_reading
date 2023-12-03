@@ -45,7 +45,7 @@ typedef struct {
     QEMUSGList *sg;
     uint64_t sector_num;
     int is_write;
-    int sg_cur_index;
+    int sg_cur_index; /* 当前操作的内存块 */
     target_phys_addr_t sg_cur_byte;
     QEMUIOVector iov;
     QEMUBH *bh;
@@ -88,11 +88,11 @@ void dma_bdrv_cb(void *opaque, int ret)
     void *mem;
 
     dbs->acb = NULL;
-    dbs->sector_num += dbs->iov.size / 512;
+    dbs->sector_num += dbs->iov.size / 512; /* 要读取的扇区个数? */
     dma_bdrv_unmap(dbs);
     qemu_iovec_reset(&dbs->iov);
 
-    if (dbs->sg_cur_index == dbs->sg->nsg || ret < 0) {
+    if (dbs->sg_cur_index == dbs->sg->nsg || ret < 0) { /* dma操作完成 */
         dbs->common.cb(dbs->common.opaque, ret);
         qemu_iovec_destroy(&dbs->iov);
         qemu_aio_release(dbs);
@@ -102,6 +102,7 @@ void dma_bdrv_cb(void *opaque, int ret)
     while (dbs->sg_cur_index < dbs->sg->nsg) {
         cur_addr = dbs->sg->sg[dbs->sg_cur_index].base + dbs->sg_cur_byte;
         cur_len = dbs->sg->sg[dbs->sg_cur_index].len - dbs->sg_cur_byte;
+        /* 内存映射? */
         mem = cpu_physical_memory_map(cur_addr, &cur_len, !dbs->is_write);
         if (!mem)
             break;
@@ -109,7 +110,7 @@ void dma_bdrv_cb(void *opaque, int ret)
         dbs->sg_cur_byte += cur_len;
         if (dbs->sg_cur_byte == dbs->sg->sg[dbs->sg_cur_index].len) {
             dbs->sg_cur_byte = 0;
-            ++dbs->sg_cur_index;
+            ++dbs->sg_cur_index; /* 转向下一个内存块 */
         }
     }
 
@@ -117,11 +118,11 @@ void dma_bdrv_cb(void *opaque, int ret)
         cpu_register_map_client(dbs, continue_after_map_failure);
         return;
     }
-
-    if (dbs->is_write) {
+	/* 如果dma操作没有完成,继续发起下一轮dma操作 */
+    if (dbs->is_write) { /* 异步写,操作完成之后,调用dma_bdrv_cb */
         dbs->acb = bdrv_aio_writev(dbs->bs, dbs->sector_num, &dbs->iov,
                                    dbs->iov.size / 512, dma_bdrv_cb, dbs);
-    } else {
+    } else { /* 异步读 */
         dbs->acb = bdrv_aio_readv(dbs->bs, dbs->sector_num, &dbs->iov,
                                   dbs->iov.size / 512, dma_bdrv_cb, dbs);
     }
@@ -132,11 +133,13 @@ void dma_bdrv_cb(void *opaque, int ret)
     }
 }
 
+/* 异步io */
 static BlockDriverAIOCB *dma_bdrv_io(
     BlockDriverState *bs, QEMUSGList *sg, uint64_t sector_num,
     BlockDriverCompletionFunc *cb, void *opaque,
     int is_write)
 {
+    /* 获取一个DMAAIOCB结构体 */
     DMAAIOCB *dbs =  qemu_aio_get_pool(&dma_aio_pool, bs, cb, opaque);
 
     dbs->acb = NULL;
@@ -148,6 +151,7 @@ static BlockDriverAIOCB *dma_bdrv_io(
     dbs->is_write = is_write;
     dbs->bh = NULL;
     qemu_iovec_init(&dbs->iov, sg->nsg);
+    /* 按照道理来说,不会在这里执行读写操作 */
     dma_bdrv_cb(dbs, 0);
     if (!dbs->acb) {
         qemu_aio_release(dbs);
@@ -164,6 +168,7 @@ BlockDriverAIOCB *dma_bdrv_read(BlockDriverState *bs,
     return dma_bdrv_io(bs, sg, sector, cb, opaque, 0);
 }
 
+/* 执行异步写操作 */
 BlockDriverAIOCB *dma_bdrv_write(BlockDriverState *bs,
                                  QEMUSGList *sg, uint64_t sector,
                                  void (*cb)(void *opaque, int ret), void *opaque)
