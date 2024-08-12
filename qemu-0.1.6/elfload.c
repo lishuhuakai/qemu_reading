@@ -319,7 +319,7 @@ static int count(char ** vec)
 
     return(i);
 }
-
+/* 初始化二进制程序参数 */
 static int prepare_binprm(struct linux_binprm *bprm)
 {
     struct stat     st;
@@ -416,7 +416,7 @@ unsigned long setup_arg_pages(unsigned long p, struct linux_binprm * bprm,
     /* 在栈的顶部保留一个额外的page用作保护 */
     mprotect((void *)(error + size), X86_PAGE_SIZE, PROT_NONE);
     /* 栈基址 */
-    stack_base = error + size - MAX_ARG_PAGES*X86_PAGE_SIZE;
+    stack_base = error + size - MAX_ARG_PAGES*X86_PAGE_SIZE; /* 栈前方要放置参数信息 */
     p += stack_base; /* 注意,这里的p始终指向程序参数的首地址 */
 
     if (bprm->loader)
@@ -718,7 +718,7 @@ static unsigned long load_elf_interp(struct elfhdr * interp_elf_ex,
 }
 
 
-/* 加载elf文件,这个函数实际实现了一个加载器
+/* 加载elf文件,这个函数实际实现了一个elf程序加载器
  * @param regs 寄存器信息
  */
 static int load_elf_binary(struct linux_binprm * bprm, struct target_pt_regs * regs,
@@ -755,7 +755,7 @@ static int load_elf_binary(struct linux_binprm * bprm, struct target_pt_regs * r
 #endif
 
     if (elf_ex.e_ident[0] != 0x7f ||
-        strncmp(&elf_ex.e_ident[1], "ELF",3) != 0)
+        strncmp(&elf_ex.e_ident[1], "ELF",3) != 0) /* 校验elf头部标识,保证是elf文件 */
     {
         return  -ENOEXEC;
     }
@@ -774,7 +774,7 @@ static int load_elf_binary(struct linux_binprm * bprm, struct target_pt_regs * r
     {
         return -ENOMEM;
     }
-    /* 读取程序头表 */
+    /* 读取程序头表,加载elf程序,实际只需要头表信息即可 */
     retval = lseek(bprm->fd, elf_ex.e_phoff, SEEK_SET);
     if(retval > 0)
     {
@@ -813,7 +813,10 @@ static int load_elf_binary(struct linux_binprm * bprm, struct target_pt_regs * r
      */
     for(i=0; i < elf_ex.e_phnum; i++)
     {
-        if (elf_ppnt->p_type == PT_INTERP)
+    	/* 解析器,用户写的代码并不能直接跑,还需要一个libc.so来引导,程序入口并不是main
+		 * 而是libc中的_start
+    	 */
+        if (elf_ppnt->p_type == PT_INTERP) 
         {
             if ( elf_interpreter != NULL )
             {
@@ -836,7 +839,7 @@ static int load_elf_binary(struct linux_binprm * bprm, struct target_pt_regs * r
                 close(bprm->fd);
                 return -ENOMEM;
             }
-            /* 读取Segment的信息 */
+            /* 读取Segment(段)的信息 */
             retval = lseek(bprm->fd, elf_ppnt->p_offset, SEEK_SET);
             if(retval >= 0)
             {
@@ -902,7 +905,7 @@ static int load_elf_binary(struct linux_binprm * bprm, struct target_pt_regs * r
                 return retval;
             }
         }
-        elf_ppnt++;
+        elf_ppnt++; /* 指向下一个程序头 */
     }
 
     /* Some simple consistency checks for the interpreter */
@@ -965,7 +968,7 @@ static int load_elf_binary(struct linux_binprm * bprm, struct target_pt_regs * r
     /* OK, This is the point of no return */
     info->end_data = 0;
     info->end_code = 0;
-    info->start_mmap = (unsigned long)ELF_START_MMAP;
+    info->start_mmap = (unsigned long)ELF_START_MMAP; /* 硬编码程序起始地址 */
     info->mmap = 0;
     /* 入口地址,规定ELF程序的入口虚拟地址,操作系统在加载完该程序后从这个地址开始执行进程的指令,可重定向
      * 文件一般没有入口地址,则这个值为0
